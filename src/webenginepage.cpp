@@ -1,5 +1,9 @@
 #include "webenginepage.h"
 
+QWebEngineView *WebEnginePage::view() const {
+    return qobject_cast<QWebEngineView *>(parent());
+}
+
 WebEnginePage::WebEnginePage(QWebEngineProfile *profile, QObject *parent)
     : QWebEnginePage(profile, parent) {
 
@@ -26,6 +30,32 @@ WebEnginePage::WebEnginePage(QWebEngineProfile *profile, QObject *parent)
   connect(this, &QWebEnginePage::selectClientCertificate, this,
           &WebEnginePage::handleSelectClientCertificate);
 #endif
+
+  connect(this, &QWebEnginePage::certificateError, this, [this](QWebEngineCertificateError error) {
+      QWidget *mainWindow = view()->window();
+      if (error.isOverridable()) {
+        QDialog dialog(mainWindow);
+        dialog.setModal(true);
+        dialog.setWindowFlags(dialog.windowFlags() &
+                              ~Qt::WindowContextHelpButtonHint);
+        Ui::CertificateErrorDialog certificateDialog;
+        certificateDialog.setupUi(&dialog);
+        certificateDialog.m_iconLabel->setText(QString());
+        QIcon icon(mainWindow->style()->standardIcon(QStyle::SP_MessageBoxWarning,
+                                                     nullptr, mainWindow));
+        certificateDialog.m_iconLabel->setPixmap(icon.pixmap(32, 32));
+        certificateDialog.m_errorLabel->setText(error.description());
+        dialog.setWindowTitle(tr("Certificate Error"));
+        if (dialog.exec() == QDialog::Accepted) {
+            error.acceptCertificate();
+            return;
+        }
+      }
+
+      QMessageBox::critical(mainWindow, tr("Certificate Error"),
+                            error.description());
+      error.rejectCertificate();
+  });
 }
 
 bool WebEnginePage::acceptNavigationRequest(const QUrl &url,
@@ -194,29 +224,6 @@ QStringList WebEnginePage::chooseFiles(QWebEnginePage::FileSelectionMode mode,
   }
   dialog->deleteLater();
   return selectedFiles;
-}
-
-bool WebEnginePage::certificateError(const QWebEngineCertificateError &error) {
-  QWidget *mainWindow = view()->window();
-  if (error.isOverridable()) {
-    QDialog dialog(mainWindow);
-    dialog.setModal(true);
-    dialog.setWindowFlags(dialog.windowFlags() &
-                          ~Qt::WindowContextHelpButtonHint);
-    Ui::CertificateErrorDialog certificateDialog;
-    certificateDialog.setupUi(&dialog);
-    certificateDialog.m_iconLabel->setText(QString());
-    QIcon icon(mainWindow->style()->standardIcon(QStyle::SP_MessageBoxWarning,
-                                                 nullptr, mainWindow));
-    certificateDialog.m_iconLabel->setPixmap(icon.pixmap(32, 32));
-    certificateDialog.m_errorLabel->setText(error.errorDescription());
-    dialog.setWindowTitle(tr("Certificate Error"));
-    return dialog.exec() == QDialog::Accepted;
-  }
-
-  QMessageBox::critical(mainWindow, tr("Certificate Error"),
-                        error.errorDescription());
-  return false;
 }
 
 void WebEnginePage::handleAuthenticationRequired(const QUrl &requestUrl,

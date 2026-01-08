@@ -21,18 +21,20 @@
 #include "ui_certificateerrordialog.h"
 #include "ui_passworddialog.h"
 
+#include <QWebEngineView>
+
 class WebEnginePage : public QWebEnginePage {
   Q_OBJECT
 public:
   WebEnginePage(QWebEngineProfile *profile, QObject *parent = nullptr);
   void injectClassChangeObserver();
+  QWebEngineView *view() const;
 
 protected:
   bool acceptNavigationRequest(const QUrl &url,
                                QWebEnginePage::NavigationType type,
                                bool isMainFrame) override;
   QWebEnginePage *createWindow(QWebEnginePage::WebWindowType type) override;
-  bool certificateError(const QWebEngineCertificateError &error) override;
   QStringList chooseFiles(FileSelectionMode mode, const QStringList &oldFiles,
                           const QStringList &acceptedMimeTypes) override;
 

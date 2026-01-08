@@ -57,17 +57,18 @@
 #include <QElapsedTimer>
 #include <QFrame>
 #include <QTime>
+#include <QWebEngineDownloadRequest>
 
 QT_BEGIN_NAMESPACE
-class QWebEngineDownloadItem;
+class QWebEngineDownloadRequest;
 QT_END_NAMESPACE
 
-// Displays one ongoing or finished download (QWebEngineDownloadItem).
+// Displays one ongoing or finished download (QWebEngineDownloadRequest).
 class DownloadWidget final : public QFrame, public Ui::DownloadWidget {
   Q_OBJECT
 public:
-  // Precondition: The QWebEngineDownloadItem has been accepted.
-  explicit DownloadWidget(QWebEngineDownloadItem *download,
+  // Precondition: The QWebEngineDownloadRequest has been accepted.
+  explicit DownloadWidget(QWebEngineDownloadRequest *download,
                           QWidget *parent = nullptr);
 
 public slots:
@@ -86,7 +87,7 @@ private slots:
 private:
   QString withUnit(qreal bytes);
 
-  QWebEngineDownloadItem *m_download;
+  QWebEngineDownloadRequest *m_download;
   QElapsedTimer m_timeAdded;
 };
 
