@@ -35,8 +35,20 @@ AutomaticTheme::AutomaticTheme(QWidget *parent)
   if (m_gPosInfoSrc) // sudo apt install geoclue-2.0
   {
     ui->refresh->setEnabled(true);
+    m_timeoutTimer = new QTimer(this);
+    m_timeoutTimer->setSingleShot(true);
+    
+    connect(m_timeoutTimer, &QTimer::timeout, this, [=]() {
+        if (!SettingsManager::instance().settings().value("sunrise").isValid() ||
+            !SettingsManager::instance().settings().value("sunset").isValid()) {
+          if (ui->refresh->isEnabled())
+            ui->refresh->click();
+        }
+    });
+
     connect(m_gPosInfoSrc, &QGeoPositionInfoSource::positionUpdated, this,
             [=](const QGeoPositionInfo &update) {
+              m_timeoutTimer->stop();
               QGeoCoordinate cor = update.coordinate();
               if (cor.isValid()) {
                 this->m_longitude = cor.longitude();
@@ -47,14 +59,9 @@ AutomaticTheme::AutomaticTheme(QWidget *parent)
                 ui->refresh->setEnabled(false);
               }
             });
-    connect(m_gPosInfoSrc, &QGeoPositionInfoSource::updateTimeout, this, [=]() {
-      if (!SettingsManager::instance().settings().value("sunrise").isValid() ||
-          !SettingsManager::instance().settings().value("sunset").isValid()) {
-        if (ui->refresh->isEnabled())
-          ui->refresh->click();
-      }
-    });
+    
     m_gPosInfoSrc->startUpdates();
+    m_timeoutTimer->start(45000); 
   } else {
     ui->refresh->setEnabled(false);
     SettingsManager::instance().settings().setValue("automaticTheme", false);
@@ -77,9 +84,9 @@ void AutomaticTheme::on_refresh_clicked() {
   if (geoCor.isValid()) {
     Sunclock sun(this->m_latitube, this->m_longitude, this->m_hourOffset);
     m_sunrise.setSecsSinceEpoch(
-        sun.sunrise(QDateTime::currentDateTimeUtc().toTime_t()));
+        sun.sunrise(QDateTime::currentDateTimeUtc().toSecsSinceEpoch()));
     m_sunset.setSecsSinceEpoch(
-        sun.sunset(QDateTime::currentDateTimeUtc().toTime_t()));
+        sun.sunset(QDateTime::currentDateTimeUtc().toSecsSinceEpoch()));
 
     ui->sunrise->setTime(m_sunrise.time());
     ui->sunset->setTime(m_sunset.time());

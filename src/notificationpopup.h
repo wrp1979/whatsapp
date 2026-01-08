@@ -6,13 +6,11 @@
 
 #include <QApplication>
 #include <QDebug>
-#include <QDesktopWidget>
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QMouseEvent>
 #include <QPropertyAnimation>
 #include <QPushButton>
-#include <QScreen>
 #include <QScreen>
 #include <QSpacerItem>
 #include <QTimer>
@@ -135,9 +133,8 @@ protected slots:
     auto y = this->pos().y();
     QPropertyAnimation *a = new QPropertyAnimation(this, "pos");
     a->setDuration(150);
-    a->setStartValue(QApplication::desktop()->mapToGlobal(QPoint(x, y)));
-    a->setEndValue(QApplication::desktop()->mapToGlobal(
-        QPoint(x, -(this->height() + 20))));
+    a->setStartValue(QPoint(x, y));
+    a->setEndValue(QPoint(x, -(this->height() + 20)));
     a->setEasingCurve(QEasingCurve::Linear);
 
     connect(a, &QPropertyAnimation::finished, this, [=]() {

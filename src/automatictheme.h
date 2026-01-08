@@ -6,6 +6,7 @@
 #include <QMessageBox>
 #include <QTimeZone>
 #include <QWidget>
+#include <QTimer>
 
 #include "settingsmanager.h"
 
@@ -35,6 +36,7 @@ private:
   Ui::AutomaticTheme *ui;
 
   QGeoPositionInfoSource *m_gPosInfoSrc;
+  QTimer *m_timeoutTimer = nullptr;
   QDateTime m_sunrise, m_sunset;
 
   double m_hourOffset = 0.0;

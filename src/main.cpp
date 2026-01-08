@@ -2,7 +2,6 @@
 #include <QDebug>
 #include <QWebEngineProfile>
 #include <QWebEngineSettings>
-#include <QtWebEngine>
 #include <QtWidgets>
 
 #include "common.h"
@@ -18,18 +17,18 @@ int main(int argc, char *argv[]) {
 #ifdef QT_DEBUG
   qputenv("QTWEBENGINE_CHROMIUM_FLAGS",
           "--remote-debugging-port=9421 --ignore-gpu-blocklist --no-sandbox "
-          "--single-process --disable-extensions");
+          "--disable-extensions");
 #else
   qputenv("QTWEBENGINE_CHROMIUM_FLAGS",
           "--disable-logging --ignore-gpu-blocklist --no-sandbox "
-          "--single-process --disable-extensions");
+          "--disable-extensions");
 #endif
 
   SingleApplication instance(argc, argv, true);
   instance.setQuitOnLastWindowClosed(false);
   instance.setWindowIcon(QIcon(":/icons/app/icon-64.png"));
   QApplication::setApplicationName("WhatSie");
-  QApplication::setDesktopFileName("com.ktechpit.whatsie");
+  QApplication::setDesktopFileName("whatsie");
   QApplication::setOrganizationDomain("com.ktechpit");
   QApplication::setOrganizationName("org.keshavnrj.ubuntu");
   QApplication::setApplicationVersion(VERSIONSTR);
@@ -136,11 +135,11 @@ int main(int argc, char *argv[]) {
     return 0;
   }
 
-  QWebEngineSettings::defaultSettings()->setAttribute(
+  QWebEngineProfile::defaultProfile()->settings()->setAttribute(
       QWebEngineSettings::DnsPrefetchEnabled, true);
-  QWebEngineSettings::defaultSettings()->setAttribute(
+  QWebEngineProfile::defaultProfile()->settings()->setAttribute(
       QWebEngineSettings::FullScreenSupportEnabled, true);
-  QWebEngineSettings::defaultSettings()->setAttribute(
+  QWebEngineProfile::defaultProfile()->settings()->setAttribute(
       QWebEngineSettings::JavascriptCanAccessClipboard, true);
 
   MainWindow whatsie;
@@ -153,7 +152,7 @@ int main(int argc, char *argv[]) {
         qInfo().noquote() << "Another instance with PID: " +
                                  QString::number(instanceId) +
                                  ", sent argument: " + message;
-        QString messageStr = QTextCodec::codecForMib(106)->toUnicode(message);
+        QString messageStr = QString::fromUtf8(message);
 
         QCommandLineParser p;
         p.addOptions(secondaryInstanceCLIOptions);
