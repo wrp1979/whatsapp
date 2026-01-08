@@ -15,12 +15,12 @@
 #include <QStyle>
 #include <QStyleFactory>
 #include <QSystemTrayIcon>
-#include <QWebEngineContextMenuData>
 #include <QWebEngineCookieStore>
 #include <QWebEngineFullScreenRequest>
 #include <QWebEngineProfile>
 #include <QWebEngineSettings>
 #include <QWebEngineView>
+#include <QWebEngineDownloadRequest>
 
 #include "about.h"
 #include "autolockeventfilter.h"
@@ -28,7 +28,6 @@
 #include "downloadmanagerwidget.h"
 #include "lock.h"
 #include "notificationpopup.h"
-#include "rateapp.h"
 #include "requestinterceptor.h"
 #include "settingswidget.h"
 #include "theme.h"
@@ -53,7 +52,7 @@ public slots:
   void updatePageTheme();
   void handleWebViewTitleChanged(const QString &title);
   void handleLoadFinished(bool loaded);
-  void handleDownloadRequested(QWebEngineDownloadItem *download);
+  void handleDownloadRequested(QWebEngineDownloadRequest *download);
   void showSettings(bool isAskedByCLI = false);
   void showAbout();
   void lockApp();
@@ -82,7 +81,6 @@ private:
   void checkLoadedCorrectly();
   void loadingQuirk(const QString &test);
   void setNotificationPresenter(QWebEngineProfile *profile);
-  void initRateWidget();
   void handleZoomOnWindowStateChange(const QWindowStateChangeEvent *ev);
   void handleZoom();
   void forceLogOut();
@@ -97,6 +95,7 @@ private:
   QRegularExpression m_unreadMessageCountRegExp;
   DownloadManagerWidget m_downloadManagerWidget;
   QScopedPointer<QWebEngineProfile> m_otrProfile;
+  QWebEngineProfile *m_globalProfile = nullptr;
   int m_correctlyLoadedRetries = 4;
   QStringList m_dictionaries;
 

@@ -30,7 +30,6 @@ MainWindow::MainWindow(QWidget *parent)
   createTrayIcon();
   createWebEngine();
   initSettingWidget();
-  initRateWidget();
   QApplication::processEvents();
   tryLock();
   updateWindowTheme();
@@ -79,24 +78,6 @@ void MainWindow::initAutoLock() {
   }
 }
 
-void MainWindow::initRateWidget() {
-  RateApp *rateApp = new RateApp(this, "snap://whatsie", 5, 5, 1000 * 30);
-  rateApp->setWindowTitle(QApplication::applicationName() + " | " +
-                          tr("Rate Application"));
-  rateApp->setVisible(false);
-  rateApp->setWindowFlags(Qt::Dialog);
-  rateApp->setAttribute(Qt::WA_DeleteOnClose, true);
-  QPoint centerPos = this->geometry().center() - rateApp->geometry().center();
-  connect(rateApp, &RateApp::showRateDialog, rateApp, [=]() {
-    if (this->windowState() != Qt::WindowMinimized && this->isVisible() &&
-        isActiveWindow()) {
-      rateApp->move(centerPos);
-      rateApp->show();
-    } else {
-      rateApp->delayShowEvent();
-    }
-  });
-}
 
 void MainWindow::runMinimized() {
   this->m_minimizeAction->trigger();
@@ -244,7 +225,10 @@ void MainWindow::tryLogOut() {
 }
 
 void MainWindow::initSettingWidget() {
-  int screenNumber = qApp->desktop()->screenNumber(this);
+  int screenNumber = 0;
+  if (this->screen()) {
+      screenNumber = QGuiApplication::screens().indexOf(this->screen());
+  }
   if (m_settingsWidget == nullptr) {
     m_settingsWidget = new SettingsWidget(
         this, screenNumber, m_webEngine->page()->profile()->cachePath(),
@@ -365,6 +349,17 @@ void MainWindow::initSettingWidget() {
 void MainWindow::changeEvent(QEvent *e) {
   if (e->type() == QEvent::WindowStateChange) {
     handleZoomOnWindowStateChange(static_cast<QWindowStateChangeEvent *>(e));
+  } else if (e->type() == QEvent::ActivationChange) {
+      if (isActiveWindow() && m_webEngine && m_webEngine->page()) {
+          // Fix for focus bug: Force focus on the input field when window becomes active
+          m_webEngine->page()->runJavaScript(
+              "setTimeout(() => {"
+              "  const editor = document.querySelector('div[contenteditable=\"true\"][data-tab=\"10\"]') || "
+              "                 document.querySelector('footer div[contenteditable=\"true\"]');"
+              "  if (editor) { editor.focus(); }"
+              "}, 100);"
+          );
+      }
   }
   QMainWindow::changeEvent(e);
 }
@@ -451,7 +446,10 @@ void MainWindow::showSettings(bool isAskedByCLI) {
   if (!m_settingsWidget->isVisible()) {
     this->updateSettingsUserAgentWidget();
     m_settingsWidget->refresh();
-    int screenNumber = qApp->desktop()->screenNumber(this);
+    int screenNumber = 0;
+    if (this->screen()) {
+        screenNumber = QGuiApplication::screens().indexOf(this->screen());
+    }
     QRect screenRect = QGuiApplication::screens().at(screenNumber)->geometry();
     if (!screenRect.contains(m_settingsWidget->pos())) {
       m_settingsWidget->move(screenRect.center() -
@@ -579,7 +577,7 @@ void MainWindow::notificationClicked() {
 void MainWindow::createActions() {
 
   m_openUrlAction = new QAction("New Chat", this);
-  m_openUrlAction->setShortcut(QKeySequence(Qt::Modifier::CTRL + Qt::Key_N));
+  m_openUrlAction->setShortcut(QKeySequence(Qt::CTRL | Qt::Key_N));
   connect(m_openUrlAction, &QAction::triggered, this, &MainWindow::newChat);
   addAction(m_openUrlAction);
 
@@ -594,7 +592,7 @@ void MainWindow::createActions() {
   addAction(m_minimizeAction);
 
   QShortcut *minimizeShortcut = new QShortcut(
-      QKeySequence(Qt::Modifier::CTRL + Qt::Key_W), this, SLOT(hide()));
+      QKeySequence(Qt::CTRL | Qt::Key_W), this, SLOT(hide()));
   minimizeShortcut->setAutoRepeat(false);
 
   m_restoreAction = new QAction(tr("&Restore"), this);
@@ -608,19 +606,19 @@ void MainWindow::createActions() {
   addAction(m_reloadAction);
 
   m_lockAction = new QAction(tr("Loc&k"), this);
-  m_lockAction->setShortcut(QKeySequence(Qt::Modifier::CTRL + Qt::Key_L));
+  m_lockAction->setShortcut(QKeySequence(Qt::CTRL | Qt::Key_L));
   connect(m_lockAction, &QAction::triggered, this, &MainWindow::lockApp);
   addAction(m_lockAction);
 
   m_settingsAction = new QAction(tr("&Settings"), this);
-  m_settingsAction->setShortcut(QKeySequence(Qt::Modifier::CTRL + Qt::Key_P));
+  m_settingsAction->setShortcut(QKeySequence(Qt::CTRL | Qt::Key_P));
   connect(m_settingsAction, &QAction::triggered, this,
           &MainWindow::showSettings);
   addAction(m_settingsAction);
 
   m_toggleThemeAction = new QAction(tr("&Toggle theme"), this);
   m_toggleThemeAction->setShortcut(
-      QKeySequence(Qt::Modifier::CTRL + Qt::Key_T));
+      QKeySequence(Qt::CTRL | Qt::Key_T));
   connect(m_toggleThemeAction, &QAction::triggered, this,
           &MainWindow::toggleTheme);
   addAction(m_toggleThemeAction);
@@ -629,7 +627,7 @@ void MainWindow::createActions() {
   connect(m_aboutAction, &QAction::triggered, this, &MainWindow::showAbout);
 
   m_quitAction = new QAction(tr("&Quit"), this);
-  m_quitAction->setShortcut(QKeySequence(Qt::Modifier::CTRL + Qt::Key_Q));
+  m_quitAction->setShortcut(QKeySequence(Qt::CTRL | Qt::Key_Q));
   connect(m_quitAction, &QAction::triggered, this, &MainWindow::quitApp);
   addAction(m_quitAction);
 }
@@ -793,8 +791,19 @@ void MainWindow::checkWindowState() {
 
 void MainWindow::initGlobalWebProfile() {
 
-  QWebEngineProfile *profile = QWebEngineProfile::defaultProfile();
-  profile->setHttpUserAgent(SettingsManager::instance()
+  if (m_globalProfile == nullptr) {
+      m_globalProfile = new QWebEngineProfile("WhatSieProfile", this);
+  }
+
+  // Force persistence
+  QString dataPath = QStandardPaths::writableLocation(QStandardPaths::AppLocalDataLocation) + "/QtWebEngine/Default";
+  QString cachePath = QStandardPaths::writableLocation(QStandardPaths::CacheLocation) + "/QtWebEngine/Default";
+  
+  m_globalProfile->setPersistentStoragePath(dataPath);
+  m_globalProfile->setCachePath(cachePath);
+  m_globalProfile->setPersistentCookiesPolicy(QWebEngineProfile::ForcePersistentCookies);
+
+  m_globalProfile->setHttpUserAgent(SettingsManager::instance()
                                 .settings()
                                 .value("useragent", defaultUserAgentStr)
                                 .toString());
@@ -805,13 +814,13 @@ void MainWindow::initGlobalWebProfile() {
                         .value("sc_dict", "en-US")
                         .toString());
 
-  profile->setSpellCheckEnabled(SettingsManager::instance()
+  m_globalProfile->setSpellCheckEnabled(SettingsManager::instance()
                                     .settings()
                                     .value("sc_enabled", true)
                                     .toBool());
-  profile->setSpellCheckLanguages(dict_names);
+  m_globalProfile->setSpellCheckLanguages(dict_names);
 
-  auto *webSettings = profile->settings();
+  auto *webSettings = m_globalProfile->settings();
   webSettings->setAttribute(QWebEngineSettings::AutoLoadImages, true);
   webSettings->setAttribute(QWebEngineSettings::JavascriptEnabled, true);
   webSettings->setAttribute(QWebEngineSettings::JavascriptCanOpenWindows, true);
@@ -880,7 +889,7 @@ void MainWindow::createWebPage(bool offTheRecord) {
     m_otrProfile.reset(new QWebEngineProfile);
   }
   auto profile =
-      offTheRecord ? m_otrProfile.get() : QWebEngineProfile::defaultProfile();
+      offTheRecord ? m_otrProfile.get() : m_globalProfile;
 
   QStringList dict_names;
   dict_names.append(SettingsManager::instance()
@@ -913,7 +922,9 @@ void MainWindow::createWebPage(bool offTheRecord) {
   // page should be set parent of profile to prevent
   // Release of profile requested but WebEnginePage still not deleted. Expect
   // troubles !
-  profile->setParent(page);
+  if (profile != m_globalProfile) {
+      profile->setParent(page);
+  }
   auto randomValue = QRandomGenerator::global()->generateDouble() * 300.0;
   page->setUrl(
       QUrl("https://web.whatsapp.com?v=" + QString::number(randomValue)));
@@ -1131,7 +1142,7 @@ void MainWindow::loadingQuirk(const QString &test) {
 
 // unused direct method to download file without having entry in download
 // manager
-void MainWindow::handleDownloadRequested(QWebEngineDownloadItem *download) {
+void MainWindow::handleDownloadRequested(QWebEngineDownloadRequest *download) {
   QFileDialog dialog(this);
   bool usenativeFileDialog = SettingsManager::instance()
                                  .settings()

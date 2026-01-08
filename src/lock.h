@@ -8,7 +8,6 @@
 #include <QPropertyAnimation>
 #include <QWidget>
 
-#include "moreapps.h"
 #include "settingsmanager.h"
 
 namespace Ui {

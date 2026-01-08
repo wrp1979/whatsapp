@@ -24,7 +24,7 @@ private:
   Ui::About *ui;
 
   QString appName, appDescription, appSourceCodeLink, appAuthorLink,
-      appAuthorName, appAuthorEmail, donateLink, moreAppsLink, appRateLink;
+      appAuthorName, appAuthorEmail, donateLink;
   bool isOpenSource;
 };
 

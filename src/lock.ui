@@ -705,9 +705,6 @@ border-bottom-left-radius: 4px;</string>
           </spacer>
          </item>
          <item>
-          <layout class="QVBoxLayout" name="moreAppsLayout"/>
-         </item>
-         <item>
           <spacer name="verticalSpacer_3">
            <property name="orientation">
             <enum>Qt::Vertical</enum>

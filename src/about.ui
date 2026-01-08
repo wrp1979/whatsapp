@@ -172,24 +172,10 @@ p, li { white-space: pre-wrap; }
              </property>
             </widget>
            </item>
-           <item>
-            <widget class="QPushButton" name="rate">
-             <property name="text">
-              <string>Rate in Store</string>
-             </property>
-            </widget>
-           </item>
           </layout>
          </item>
          <item>
           <layout class="QHBoxLayout" name="horizontalLayout">
-           <item>
-            <widget class="QPushButton" name="more_apps">
-             <property name="text">
-              <string>More Applications</string>
-             </property>
-            </widget>
-           </item>
            <item>
             <widget class="QPushButton" name="source_code">
              <property name="text">

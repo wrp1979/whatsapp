@@ -23,7 +23,7 @@ equals(QMAKE_HOST.arch, aarch64) {
 # Uncomment if you need specific linker flags as well
 #QMAKE_LFLAGS += $$QMAKE_LDFLAGS
 
-QT += core gui webengine webenginewidgets positioning
+QT += core gui webenginewidgets positioning
 
 CONFIG += c++17
 
@@ -48,7 +48,6 @@ LIBS += -L/usr/X11/lib -lX11
 include(singleapplication/singleapplication.pri)
 DEFINES += QAPPLICATION_CLASS=QApplication
 
-include(widgets/MoreApps/MoreApps.pri)
 
 # The following define makes your compiler emit warnings if you use
 # any Qt feature that has been marked deprecated (the exact warnings
@@ -91,7 +90,6 @@ SOURCES += \
         main.cpp \
         mainwindow.cpp \
         permissiondialog.cpp \
-        rateapp.cpp \
         settingswidget.cpp \
         sunclock.cpp \
         theme.cpp \
@@ -116,7 +114,6 @@ HEADERS += \
     mainwindow.h \
     notificationpopup.h \
     permissiondialog.h \
-    rateapp.h \
     requestinterceptor.h \
     settingsmanager.h \
     settingswidget.h \
@@ -136,7 +133,6 @@ FORMS += \
     lock.ui \
     passworddialog.ui \
     permissiondialog.ui \
-    rateapp.ui \
     settingswidget.ui
 
 TRANSLATIONS += \
@@ -158,7 +154,11 @@ target.path = $$BINDIR
 CONFIG(FLATPAK){
     message("This is a flatpak build, assuming dicts are not required.")
 }else{
-    qtPrepareTool(CONVERT_TOOL, qwebengine_convert_dict)
+    exists($$[QT_HOST_LIBEXECS]/qwebengine_convert_dict) {
+        CONVERT_TOOL = $$[QT_HOST_LIBEXECS]/qwebengine_convert_dict
+    } else {
+        qtPrepareTool(CONVERT_TOOL, qwebengine_convert_dict)
+    }
 
     DICTIONARIES_DIR = qtwebengine_dictionaries
 
