@@ -2,6 +2,35 @@
 
 Feature rich WhatsApp web client based on Qt WebEngine for Linux Desktop
 
+## Fork Improvements
+
+This fork includes several improvements over the original project:
+
+### Qt6 Migration
+- Full migration from Qt5 to Qt6 WebEngine API
+- Replaced deprecated Qt5 APIs with modern Qt6 equivalents:
+  - `QDesktopWidget` → `QScreen` APIs
+  - `toTime_t()` → `toSecsSinceEpoch()`
+  - `QTextCodec` → `QString::fromUtf8()`
+  - `DataLocation` → `AppLocalDataLocation`
+  - Fixed geolocation timer using `QTimer` instead of deprecated signal
+
+### System Theme Support
+- Added new "System" theme option that automatically follows OS theme
+- Uses `gsettings` for GNOME/GTK theme detection with palette fallback
+- Default theme changed from "Light" to "System" for better desktop integration
+- Theme toggle now cycles through: System → Dark → Light
+
+### Cleanup & Modernization
+- Removed RateApp and MoreApps widgets (cleaner experience)
+- Updated Chrome user agent from v125 to v134
+- Fixed `StartupWMClass` in desktop file for proper window grouping
+- Improved notification handling and crash prevention
+- Removed `--single-process` chromium flag (caused issues)
+
+### Build Requirements Update
+- Now requires Qt6 (Qt 6.2+ recommended) instead of Qt5
+
 ## Whatsie Key features
 
 - Light and Dark Themes with automatic switching
@@ -63,8 +92,8 @@ The source code can be built using the regular Qt application development proced
 ### Build requirements
  - git (to clone repo)
  - libx11-dev libx11-xcb-dev (required for x11 XKB module support at build time)
- - Qt => 5.9 (5.15 recommended) with the following modules installed with development headers (lib*-dev packages on Ubuntu)
-	+ webengine
+ - Qt 6.2+ (6.5+ recommended) with the following modules installed with development headers
+	+ webengine (qt6-webengine-dev)
 	+ webenginewidgets
 	+ positioning
 	
@@ -78,9 +107,9 @@ The source code can be built using the regular Qt application development proced
 	
 	`cd whatsie/src`  
 	
- 3. Run **qmake**
-	
-	`qmake`
+ 3. Run **qmake** (use `qmake6` on systems where Qt5 is default)
+
+	`qmake6`
 	
  4. Run **make** (with optional **-j** option that specify jobs or commands to run simultaneously while building)
  
