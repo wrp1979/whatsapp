@@ -5,6 +5,7 @@
 #include <QDateTime>
 #include <QMessageBox>
 #include <QStyle>
+#include <QProcess>
 
 #include "automatictheme.h"
 
@@ -49,14 +50,10 @@ SettingsWidget::SettingsWidget(QWidget *parent, int screenNumber,
                                         .settings()
                                         .value("muteAudio", false)
                                         .toBool());
-  ui->autoPlayMediaCheckBox->setChecked(SettingsManager::instance()
-                                            .settings()
-                                            .value("autoPlayMedia", false)
-                                            .toBool());
   ui->themeComboBox->setCurrentText(
       Utils::toCamelCase(SettingsManager::instance()
                              .settings()
-                             .value("windowTheme", "light")
+                             .value("windowTheme", "system")
                              .toString()));
 
   ui->userAgentLineEdit->setText(SettingsManager::instance()
@@ -310,7 +307,7 @@ void SettingsWidget::refresh() {
   ui->themeComboBox->setCurrentText(
       Utils::toCamelCase(SettingsManager::instance()
                              .settings()
-                             .value("windowTheme", "light")
+                             .value("windowTheme", "system")
                              .toString()));
 
   ui->cookieSize->setText(Utils::refreshCacheSize(persistentStoragePath()));
@@ -399,8 +396,29 @@ void SettingsWidget::on_themeComboBox_currentTextChanged(const QString &arg1) {
 }
 
 void SettingsWidget::applyThemeQuirks() {
+  QString themeText = ui->themeComboBox->currentText();
+  if (QString::compare(themeText, "system", Qt::CaseInsensitive) == 0) {
+      // Check OS theme
+      QProcess p;
+      p.start("gsettings", QStringList() << "get" << "org.gnome.desktop.interface" << "color-scheme");
+      if (p.waitForFinished(500)) {
+          QString output = p.readAllStandardOutput().trimmed();
+          if (output.contains("dark", Qt::CaseInsensitive)) {
+              themeText = "dark";
+          } else {
+              themeText = "light";
+          }
+      } else {
+          if (QApplication::style()->standardPalette().color(QPalette::Window).value() < 128) {
+              themeText = "dark";
+          } else {
+              themeText = "light";
+          }
+      }
+  }
+
   // little quirks
-  if (QString::compare(ui->themeComboBox->currentText(), "dark",
+  if (QString::compare(themeText, "dark",
                        Qt::CaseInsensitive) == 0) {
     ui->bottomLine->setStyleSheet("background-color: rgb(0, 117, 96);");
     ui->label_7->setStyleSheet(
@@ -516,11 +534,9 @@ void SettingsWidget::toggleTheme() {
         "Automatic theme switching was disabled due to manual theme toggle."));
     ui->automaticThemeCheckBox->setChecked(false);
   }
-  if (ui->themeComboBox->currentIndex() == 0) {
-    ui->themeComboBox->setCurrentIndex(1);
-  } else {
-    ui->themeComboBox->setCurrentIndex(0);
-  }
+  
+  int nextIndex = (ui->themeComboBox->currentIndex() + 1) % 3;
+  ui->themeComboBox->setCurrentIndex(nextIndex);
 }
 
 void SettingsWidget::setCurrentPasswordText(QString str) {

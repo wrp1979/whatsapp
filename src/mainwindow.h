@@ -70,6 +70,7 @@ private:
   void createTrayIcon();
   void createWebEngine();
   QString getPageTheme() const;
+  bool isSystemDark();
   void handleCookieAdded(const QNetworkCookie &cookie);
   void doAppReload();
   void askToReloadPage();

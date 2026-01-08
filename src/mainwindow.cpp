@@ -8,6 +8,7 @@
 #include <QStyleHints>
 #include <QUrlQuery>
 #include <QWebEngineNotification>
+#include <QProcess>
 
 extern QString defaultUserAgentStr;
 extern double defaultZoomFactorMaximized;
@@ -106,13 +107,27 @@ void MainWindow::loadSchemaUrl(const QString &arg) {
   }
 }
 
+bool MainWindow::isSystemDark() {
+    QProcess p;
+    p.start("gsettings", QStringList() << "get" << "org.gnome.desktop.interface" << "color-scheme");
+    if (p.waitForFinished(500)) {
+        QString output = p.readAllStandardOutput().trimmed();
+        return output.contains("dark", Qt::CaseInsensitive);
+    }
+    return QApplication::style()->standardPalette().color(QPalette::Window).value() < 128;
+}
+
 void MainWindow::updatePageTheme() {
   if (m_webEngine && m_webEngine->page()) {
 
     QString windowTheme = SettingsManager::instance()
                               .settings()
-                              .value("windowTheme", "light")
+                              .value("windowTheme", "system")
                               .toString();
+
+    if (windowTheme == "system") {
+        windowTheme = isSystemDark() ? "dark" : "light";
+    }
 
     if (windowTheme == "dark") {
       m_webEngine->page()->runJavaScript(
@@ -120,8 +135,7 @@ void MainWindow::updatePageTheme() {
           "localStorage.theme='\"dark\"'; ");
 
       m_webEngine->page()->runJavaScript(
-          "document.querySelector('body').classList.add('" + windowTheme +
-          "');");
+          "document.querySelector('body').classList.add('dark');");
     } else {
       m_webEngine->page()->runJavaScript(
           "localStorage['system-theme-mode']='false'; "
@@ -147,10 +161,17 @@ void MainWindow::updateWindowTheme() {
                                            .settings()
                                            .value("widgetStyle", "Fusion")
                                            .toString()));
-  if (SettingsManager::instance()
-          .settings()
-          .value("windowTheme", "light")
-          .toString() == "dark") {
+
+  QString theme = SettingsManager::instance()
+                      .settings()
+                      .value("windowTheme", "system")
+                      .toString();
+
+  if (theme == "system") {
+      theme = isSystemDark() ? "dark" : "light";
+  }
+
+  if (theme == "dark") {
     qApp->setPalette(Theme::getDarkPalette());
     m_webEngine->setStyleSheet(
         "QWebEngineView{background:rgb(17, 27, 33);}"); // whatsapp dark color
