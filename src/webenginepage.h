@@ -64,6 +64,7 @@ private slots:
   void injectPreventScrollWheelZoomHelper();
   void injectFullWidthJavaScript();
   void injectNewChatJavaScript();
+  void injectInputFocusKeeper();
 };
 
 #endif // WEBENGINEPAGE_H

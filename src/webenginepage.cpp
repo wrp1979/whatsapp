@@ -176,6 +176,7 @@ void WebEnginePage::handleLoadFinished(bool ok) {
     injectFullWidthJavaScript();
     injectClassChangeObserver();
     injectNewChatJavaScript();
+    injectInputFocusKeeper();
   }
 }
 
@@ -420,5 +421,124 @@ void WebEnginePage::injectNewChatJavaScript() {
                 {
                     return (openNewChatWhatsie != 'undefined');
                 })";
+  this->runJavaScript(js);
+}
+
+void WebEnginePage::injectInputFocusKeeper() {
+  QString js = R"(
+    (function() {
+      if (window._whatsieFocusKeeperInstalled) return;
+      window._whatsieFocusKeeperInstalled = true;
+
+      let refocusTimeout = null;
+      let lastInputElement = null;
+
+      function getMessageInput() {
+        return document.querySelector('div[contenteditable="true"][data-tab="10"]') ||
+               document.querySelector('footer div[contenteditable="true"]') ||
+               document.querySelector('div[contenteditable="true"][role="textbox"]');
+      }
+
+      function isValidFocusTarget(el) {
+        if (!el) return false;
+        const validSelectors = [
+          '[contenteditable="true"]',
+          'input',
+          'textarea',
+          'select',
+          'button',
+          '[role="button"]',
+          '[role="menuitem"]',
+          '[role="option"]',
+          '[role="listbox"]',
+          '[role="dialog"]',
+          '[role="menu"]',
+          '[data-testid]',
+          '.emoji-picker',
+          '.popup',
+          '.modal',
+          'video',
+          'audio'
+        ];
+        return validSelectors.some(sel => el.closest(sel));
+      }
+
+      function isModalOrPopupOpen() {
+        return document.querySelector('[role="dialog"]') ||
+               document.querySelector('[data-animate-modal-popup="true"]') ||
+               document.querySelector('.popup-container') ||
+               document.querySelector('._2KKXC') ||
+               document.querySelector('[aria-modal="true"]');
+      }
+
+      function refocusInput() {
+        if (refocusTimeout) {
+          clearTimeout(refocusTimeout);
+        }
+        refocusTimeout = setTimeout(() => {
+          if (isModalOrPopupOpen()) return;
+
+          const activeEl = document.activeElement;
+          if (activeEl && isValidFocusTarget(activeEl)) return;
+
+          const input = getMessageInput();
+          if (input && document.body.contains(input)) {
+            const selection = window.getSelection();
+            const hadSelection = selection && selection.rangeCount > 0;
+            let savedRange = null;
+            if (hadSelection && input.contains(selection.anchorNode)) {
+              savedRange = selection.getRangeAt(0).cloneRange();
+            }
+
+            input.focus();
+
+            if (savedRange) {
+              selection.removeAllRanges();
+              selection.addRange(savedRange);
+            }
+          }
+        }, 50);
+      }
+
+      document.addEventListener('focusout', (e) => {
+        const input = getMessageInput();
+        if (input && (e.target === input || input.contains(e.target))) {
+          lastInputElement = input;
+          setTimeout(() => {
+            if (!isValidFocusTarget(document.activeElement)) {
+              refocusInput();
+            }
+          }, 10);
+        }
+      }, true);
+
+      document.addEventListener('click', (e) => {
+        if (isModalOrPopupOpen()) return;
+        if (isValidFocusTarget(e.target)) return;
+
+        const input = getMessageInput();
+        if (input && !input.contains(e.target)) {
+          const chatArea = document.querySelector('#main');
+          if (chatArea && chatArea.contains(e.target)) {
+            refocusInput();
+          }
+        }
+      }, true);
+
+      const inputObserver = new MutationObserver(() => {
+        const input = getMessageInput();
+        if (input && input !== lastInputElement) {
+          lastInputElement = input;
+        }
+      });
+
+      inputObserver.observe(document.body, {
+        childList: true,
+        subtree: true
+      });
+
+      console.log('[Whatsie] Input focus keeper installed');
+    })();
+  )";
   this->runJavaScript(js);
 }
