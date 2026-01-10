@@ -42,6 +42,10 @@ increment_build_number() {
     new=$((current + 1))
     echo "$new" > "$BUILD_NUMBER_FILE"
     log_info "Build number: $current -> $new"
+
+    # Force recompilation of files that use BUILD_NUM
+    # Without this, make won't recompile them since source didn't change
+    rm -f "$BUILD_DIR/main.o" "$BUILD_DIR/mainwindow.o" 2>/dev/null
 }
 
 do_qmake() {
