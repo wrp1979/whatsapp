@@ -73,7 +73,19 @@ DEFINES += GIT_HASH=$$GIT_HASH GIT_BRANCH=$$GIT_BRANCH BUILD_TIMESTAMP=$$BUILD_T
 
 # Set program version
 VERSION = 4.16.3
+
+# Read build number from file (auto-incremented by build script)
+BUILD_NUMBER_FILE = $$PWD/BUILD_NUMBER
+exists($$BUILD_NUMBER_FILE) {
+    BUILD_NUM = $$cat($$BUILD_NUMBER_FILE)
+    BUILD_NUM = $$first(BUILD_NUM)
+} else {
+    BUILD_NUM = 0
+}
+message("Build number: $$BUILD_NUM")
+
 DEFINES += VERSIONSTR=\\\"$${VERSION}\\\"
+DEFINES += BUILD_NUM=$$BUILD_NUM
 
 # You can also make your code fail to compile if you use deprecated APIs.
 # In order to do so, uncomment the following line.
