@@ -427,197 +427,279 @@ void WebEnginePage::injectNewChatJavaScript() {
 void WebEnginePage::injectInputFocusKeeper() {
   QString js = R"(
     (function() {
-      if (window._whatsieFocusKeeperV2) return;
-      window._whatsieFocusKeeperV2 = true;
+      if (window._whatsieFocusKeeperV4) return;
+      window._whatsieFocusKeeperV4 = true;
 
-      let focusCheckInterval = null;
-      let lastKnownInput = null;
-      let focusEnabled = true;
-      let lastFocusTime = 0;
+      let enabled = true;
+      let lastModalState = false;
+
+      // Hidden input for WebKit focus workaround
+      const hiddenInput = document.createElement('input');
+      hiddenInput.style.cssText = 'position:fixed;top:-9999px;left:-9999px;opacity:0;pointer-events:none;';
+      hiddenInput.setAttribute('tabindex', '-1');
+      hiddenInput.setAttribute('aria-hidden', 'true');
+      document.body.appendChild(hiddenInput);
 
       // All possible selectors for the message input field
       const INPUT_SELECTORS = [
+        '#main footer div[contenteditable="true"][data-tab="10"]',
+        '#main div[contenteditable="true"][data-tab="10"]',
         'div[contenteditable="true"][data-tab="10"]',
-        'footer div[contenteditable="true"]',
-        'div[contenteditable="true"][role="textbox"]',
-        '#main footer div[contenteditable="true"]',
-        '[data-testid="conversation-compose-box-input"]'
+        '[data-testid="conversation-compose-box-input"]',
+        '#main footer div[contenteditable="true"]'
       ];
 
-      function getMessageInput() {
+      function getInput() {
         for (const sel of INPUT_SELECTORS) {
           const el = document.querySelector(sel);
-          if (el && document.body.contains(el) && el.offsetParent !== null) {
-            return el;
-          }
+          if (el && el.offsetParent !== null) return el;
         }
         return null;
       }
 
-      // Check if an interactive element that should receive focus
-      function isInteractiveElement(el) {
-        if (!el || el === document.body || el === document.documentElement) return false;
+      // Check if image/media editor overlay is open (paste image, send file, etc)
+      function hasMediaEditor() {
+        // The image editor toolbar/overlay
+        if (document.querySelector('[data-testid="media-editor"]')) return true;
+        if (document.querySelector('[data-testid="image-editor"]')) return true;
+        // The draw/edit tools bar visible in screenshot
+        if (document.querySelector('[data-testid="media-canvas-container"]')) return true;
+        // Media preview panel (when you paste/attach image)
+        if (document.querySelector('[data-testid="media-preview"]')) return true;
+        // Check for the X button that closes media editor
+        if (document.querySelector('[data-testid="x-viewer"]')) return true;
+        // Any overlay with image editing tools
+        const overlay = document.querySelector('#app > div > span:nth-child(4) > div');
+        if (overlay && overlay.querySelector('[data-testid="send"]')) return true;
+        return false;
+      }
 
-        const tag = el.tagName?.toLowerCase();
-        if (['input', 'textarea', 'select', 'video', 'audio'].includes(tag)) return true;
-        if (el.contentEditable === 'true') return true;
-        if (el.getAttribute('role') === 'textbox') return true;
+      // Only block focus when these specific modals are open
+      function hasBlockingModal() {
+        // Media editor - user might want to type caption
+        if (hasMediaEditor()) return true;
+        if (document.querySelector('[data-testid="media-editor-modal"]')) return true;
+        if (document.querySelector('[data-testid="media-picker-modal"]')) return true;
+        if (document.querySelector('[data-testid="forward-message-modal"]')) return true;
+        if (document.querySelector('[data-testid="popup-contents"]')) return true;
+        if (document.querySelector('[role="dialog"][aria-modal="true"]')) return true;
+        // Generic overlay detection - if there's a modal-like overlay
+        const appOverlays = document.querySelectorAll('#app > div > span > div[tabindex="-1"]');
+        for (const ov of appOverlays) {
+          if (ov.querySelector('input, textarea, [contenteditable="true"]')) return true;
+        }
+        return false;
+      }
+
+      // Check if focused on search or other valid input
+      function isOnOtherInput() {
+        const active = document.activeElement;
+        if (!active) return false;
+        if (active === hiddenInput) return false;
+
+        // Sidebar inputs (search, etc)
+        const side = document.querySelector('#side');
+        if (side && side.contains(active)) {
+          if (active.getAttribute('contenteditable') === 'true' ||
+              active.tagName === 'INPUT') {
+            return true;
+          }
+        }
+
+        // Media caption input
+        if (active.getAttribute('data-testid') === 'media-caption-input') return true;
+        if (active.closest('[data-testid="media-editor"]')) return true;
+        if (active.closest('[data-testid="image-editor"]')) return true;
+        if (active.closest('[data-testid="popup-contents"]')) return true;
+
+        // Any contenteditable NOT in #main footer (caption fields, etc)
+        if (active.getAttribute('contenteditable') === 'true') {
+          const mainFooter = document.querySelector('#main footer');
+          if (!mainFooter || !mainFooter.contains(active)) {
+            return true;
+          }
+        }
+
+        // Any input/textarea outside main message input
+        if (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA') {
+          return true;
+        }
 
         return false;
       }
 
-      // Check if any modal, dialog, popup, emoji picker, or menu is open
-      function isOverlayOpen() {
-        const overlaySelectors = [
-          '[role="dialog"]',
-          '[role="alertdialog"]',
-          '[aria-modal="true"]',
-          '[data-animate-modal-popup="true"]',
-          '[data-testid="popup"]',
-          '[data-testid="emoji-picker"]',
-          '[data-testid="media-viewer"]',
-          '.popup-container',
-          '.overlay',
-          '._2KKXC',
-          '._3ndVb',
-          '[data-testid="menu"]',
-          '[role="menu"]',
-          '[role="listbox"]',
-          '.emoji-picker'
-        ];
-        return overlaySelectors.some(sel => document.querySelector(sel));
+      // WebKit workaround: focus hidden input first, then target
+      function webkitFocusFix(target) {
+        try {
+          hiddenInput.focus();
+          hiddenInput.setSelectionRange(0, 0);
+        } catch(e) {}
+        target.focus({ preventScroll: true, focusVisible: true });
       }
 
-      // Check if user is selecting text anywhere
-      function isSelectingText() {
-        const selection = window.getSelection();
-        return selection && selection.toString().length > 0;
-      }
+      // BRUTAL force focus with WebKit workaround
+      function brutalFocus() {
+        if (!enabled) return;
+        if (hasBlockingModal()) return;
+        if (isOnOtherInput()) return;
 
-      // Check if active element is within sidebar (contact list, settings, etc)
-      function isInSidebar() {
-        const active = document.activeElement;
-        if (!active) return false;
-        const sidebar = document.querySelector('#side');
-        return sidebar && sidebar.contains(active);
-      }
-
-      // Force focus to the message input
-      function forceFocus() {
-        if (!focusEnabled) return;
-        if (isOverlayOpen()) return;
-        if (isSelectingText()) return;
-        if (isInSidebar()) return;
-
-        const now = Date.now();
-        if (now - lastFocusTime < 50) return; // Debounce
-
-        const input = getMessageInput();
+        const input = getInput();
         if (!input) return;
 
         const active = document.activeElement;
 
-        // If already focused on the input, do nothing
-        if (active === input || input.contains(active)) return;
+        // Already on target
+        if (active === input) return;
+        if (input.contains(active)) return;
 
-        // If focused on another interactive element (like search), allow it
-        if (isInteractiveElement(active) && active !== document.body) return;
-
-        // Force focus
-        lastFocusTime = now;
-        input.focus({ preventScroll: true });
+        // Use WebKit workaround
+        webkitFocusFix(input);
       }
 
-      // Main check loop - runs every 100ms
-      function startFocusGuard() {
-        if (focusCheckInterval) clearInterval(focusCheckInterval);
-        focusCheckInterval = setInterval(forceFocus, 100);
+      // Ultra aggressive loop - 25ms interval
+      let intervalId = setInterval(brutalFocus, 25);
+
+      // RAF loop for smooth focus
+      let rafEnabled = true;
+      function rafLoop() {
+        if (!rafEnabled) return;
+        brutalFocus();
+        requestAnimationFrame(rafLoop);
       }
+      requestAnimationFrame(rafLoop);
 
-      // Intercept blur events on the input to immediately refocus
-      function setupBlurInterceptor() {
-        document.addEventListener('focusout', (e) => {
-          const input = getMessageInput();
-          if (!input) return;
-          if (e.target !== input && !input.contains(e.target)) return;
+      // Detect modal close and IMMEDIATELY focus with burst
+      const observer = new MutationObserver(() => {
+        const currentModalState = hasBlockingModal();
+        if (lastModalState && !currentModalState) {
+          // Modal just closed - FORCE FOCUS NOW with burst
+          brutalFocus();
+          setTimeout(brutalFocus, 0);
+          setTimeout(brutalFocus, 16);
+          setTimeout(brutalFocus, 32);
+          setTimeout(brutalFocus, 50);
+          setTimeout(brutalFocus, 100);
+          setTimeout(brutalFocus, 150);
+          setTimeout(brutalFocus, 200);
+          setTimeout(brutalFocus, 300);
+        }
+        lastModalState = currentModalState;
 
-          // Schedule immediate refocus
-          requestAnimationFrame(() => {
-            setTimeout(forceFocus, 0);
-          });
-        }, true);
-      }
+        // Also try on any DOM change
+        if (!currentModalState) {
+          brutalFocus();
+        }
+      });
 
-      // Handle visibility changes (tab switch, etc)
-      function setupVisibilityHandler() {
-        document.addEventListener('visibilitychange', () => {
-          if (document.visibilityState === 'visible') {
-            setTimeout(forceFocus, 100);
+      observer.observe(document.body, {
+        childList: true,
+        subtree: true,
+        attributes: true,
+        attributeFilter: ['class', 'style', 'aria-hidden', 'data-testid']
+      });
+
+      // Prevent mousedown from stealing focus in main area
+      document.addEventListener('mousedown', (e) => {
+        if (hasBlockingModal()) return;
+
+        const input = getInput();
+        if (!input) return;
+
+        const main = document.querySelector('#main');
+        if (!main || !main.contains(e.target)) return;
+
+        // If clicking on non-interactive element in chat area, prevent focus steal
+        const target = e.target;
+        const isInteractive = target.closest('button, a, [role="button"], input, textarea, [contenteditable="true"], video, audio, [tabindex]');
+
+        if (!isInteractive && !input.contains(target)) {
+          // Don't prevent default (breaks selection), but schedule immediate refocus
+          setTimeout(brutalFocus, 0);
+          setTimeout(brutalFocus, 10);
+        }
+      }, true);
+
+      // On any click in main area, force focus after
+      document.addEventListener('click', (e) => {
+        if (hasBlockingModal()) return;
+        const main = document.querySelector('#main');
+        if (main && main.contains(e.target)) {
+          setTimeout(brutalFocus, 0);
+          setTimeout(brutalFocus, 10);
+          setTimeout(brutalFocus, 50);
+        }
+      }, true);
+
+      // After any mouseup
+      document.addEventListener('mouseup', () => {
+        if (hasBlockingModal()) return;
+        setTimeout(brutalFocus, 0);
+        setTimeout(brutalFocus, 50);
+      }, true);
+
+      // On window/visibility focus
+      window.addEventListener('focus', () => {
+        setTimeout(brutalFocus, 0);
+        setTimeout(brutalFocus, 50);
+        setTimeout(brutalFocus, 100);
+      });
+
+      document.addEventListener('visibilitychange', () => {
+        if (document.visibilityState === 'visible') {
+          setTimeout(brutalFocus, 0);
+          setTimeout(brutalFocus, 100);
+        }
+      });
+
+      // Intercept all focusout from input
+      document.addEventListener('focusout', (e) => {
+        const input = getInput();
+        if (input && (e.target === input || input.contains(e.target))) {
+          if (!hasBlockingModal() && !isOnOtherInput()) {
+            setTimeout(brutalFocus, 0);
+            setTimeout(brutalFocus, 10);
+            setTimeout(brutalFocus, 50);
+            setTimeout(brutalFocus, 100);
           }
-        });
-      }
+        }
+      }, true);
 
-      // Handle window focus
-      function setupWindowFocusHandler() {
-        window.addEventListener('focus', () => {
-          setTimeout(forceFocus, 50);
-        });
-      }
+      // Keyboard shortcut to force focus (Escape key when not in modal)
+      document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape' && !hasBlockingModal()) {
+          setTimeout(brutalFocus, 0);
+        }
+      }, true);
 
-      // Handle clicks outside the input
-      function setupClickHandler() {
-        document.addEventListener('click', (e) => {
-          if (isOverlayOpen()) return;
-
-          const input = getMessageInput();
-          if (!input) return;
-
-          // If clicking on an interactive element, allow it
-          if (isInteractiveElement(e.target)) return;
-
-          // If clicking in the main chat area (not sidebar), refocus
-          const main = document.querySelector('#main');
-          if (main && main.contains(e.target) && !input.contains(e.target)) {
-            requestAnimationFrame(() => {
-              setTimeout(forceFocus, 10);
-            });
-          }
-        }, true);
-      }
-
-      // Watch for DOM changes that might affect the input
-      function setupDomObserver() {
-        const observer = new MutationObserver(() => {
-          const input = getMessageInput();
-          if (input && input !== lastKnownInput) {
-            lastKnownInput = input;
-            setTimeout(forceFocus, 50);
-          }
-        });
-
-        observer.observe(document.body, {
-          childList: true,
-          subtree: true
-        });
-      }
-
-      // Expose control functions for debugging
+      // Debug controls
       window._whatsieFocusControl = {
-        enable: () => { focusEnabled = true; startFocusGuard(); },
-        disable: () => { focusEnabled = false; clearInterval(focusCheckInterval); },
-        forceFocus: forceFocus,
-        status: () => ({ enabled: focusEnabled, input: getMessageInput(), overlay: isOverlayOpen() })
+        enable: () => {
+          enabled = true;
+          rafEnabled = true;
+          clearInterval(intervalId);
+          intervalId = setInterval(brutalFocus, 25);
+          requestAnimationFrame(rafLoop);
+          console.log('[Whatsie] Focus keeper enabled');
+        },
+        disable: () => {
+          enabled = false;
+          rafEnabled = false;
+          clearInterval(intervalId);
+          console.log('[Whatsie] Focus keeper disabled');
+        },
+        force: brutalFocus,
+        status: () => ({
+          enabled,
+          input: getInput(),
+          modal: hasBlockingModal(),
+          otherInput: isOnOtherInput(),
+          active: document.activeElement,
+          activeTag: document.activeElement?.tagName,
+          activeTestId: document.activeElement?.getAttribute('data-testid')
+        })
       };
 
-      // Initialize all handlers
-      setupBlurInterceptor();
-      setupVisibilityHandler();
-      setupWindowFocusHandler();
-      setupClickHandler();
-      setupDomObserver();
-      startFocusGuard();
-
-      console.log('[Whatsie] Focus keeper v2 installed - aggressive mode');
+      console.log('[Whatsie] Focus keeper v4 - BRUTAL mode with WebKit fix');
     })();
   )";
   this->runJavaScript(js);
