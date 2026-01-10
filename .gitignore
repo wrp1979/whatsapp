@@ -53,3 +53,7 @@ compile_commands.json
 
 qtwebengine_dictionaries
 whatsie
+
+# AI agent config files
+AGENTS.md
+GEMINI.md
