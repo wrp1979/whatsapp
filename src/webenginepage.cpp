@@ -427,117 +427,197 @@ void WebEnginePage::injectNewChatJavaScript() {
 void WebEnginePage::injectInputFocusKeeper() {
   QString js = R"(
     (function() {
-      if (window._whatsieFocusKeeperInstalled) return;
-      window._whatsieFocusKeeperInstalled = true;
+      if (window._whatsieFocusKeeperV2) return;
+      window._whatsieFocusKeeperV2 = true;
 
-      let refocusTimeout = null;
-      let lastInputElement = null;
+      let focusCheckInterval = null;
+      let lastKnownInput = null;
+      let focusEnabled = true;
+      let lastFocusTime = 0;
+
+      // All possible selectors for the message input field
+      const INPUT_SELECTORS = [
+        'div[contenteditable="true"][data-tab="10"]',
+        'footer div[contenteditable="true"]',
+        'div[contenteditable="true"][role="textbox"]',
+        '#main footer div[contenteditable="true"]',
+        '[data-testid="conversation-compose-box-input"]'
+      ];
 
       function getMessageInput() {
-        return document.querySelector('div[contenteditable="true"][data-tab="10"]') ||
-               document.querySelector('footer div[contenteditable="true"]') ||
-               document.querySelector('div[contenteditable="true"][role="textbox"]');
-      }
-
-      function isValidFocusTarget(el) {
-        if (!el) return false;
-        const validSelectors = [
-          '[contenteditable="true"]',
-          'input',
-          'textarea',
-          'select',
-          'button',
-          '[role="button"]',
-          '[role="menuitem"]',
-          '[role="option"]',
-          '[role="listbox"]',
-          '[role="dialog"]',
-          '[role="menu"]',
-          '[data-testid]',
-          '.emoji-picker',
-          '.popup',
-          '.modal',
-          'video',
-          'audio'
-        ];
-        return validSelectors.some(sel => el.closest(sel));
-      }
-
-      function isModalOrPopupOpen() {
-        return document.querySelector('[role="dialog"]') ||
-               document.querySelector('[data-animate-modal-popup="true"]') ||
-               document.querySelector('.popup-container') ||
-               document.querySelector('._2KKXC') ||
-               document.querySelector('[aria-modal="true"]');
-      }
-
-      function refocusInput() {
-        if (refocusTimeout) {
-          clearTimeout(refocusTimeout);
+        for (const sel of INPUT_SELECTORS) {
+          const el = document.querySelector(sel);
+          if (el && document.body.contains(el) && el.offsetParent !== null) {
+            return el;
+          }
         }
-        refocusTimeout = setTimeout(() => {
-          if (isModalOrPopupOpen()) return;
+        return null;
+      }
 
-          const activeEl = document.activeElement;
-          if (activeEl && isValidFocusTarget(activeEl)) return;
+      // Check if an interactive element that should receive focus
+      function isInteractiveElement(el) {
+        if (!el || el === document.body || el === document.documentElement) return false;
+
+        const tag = el.tagName?.toLowerCase();
+        if (['input', 'textarea', 'select', 'video', 'audio'].includes(tag)) return true;
+        if (el.contentEditable === 'true') return true;
+        if (el.getAttribute('role') === 'textbox') return true;
+
+        return false;
+      }
+
+      // Check if any modal, dialog, popup, emoji picker, or menu is open
+      function isOverlayOpen() {
+        const overlaySelectors = [
+          '[role="dialog"]',
+          '[role="alertdialog"]',
+          '[aria-modal="true"]',
+          '[data-animate-modal-popup="true"]',
+          '[data-testid="popup"]',
+          '[data-testid="emoji-picker"]',
+          '[data-testid="media-viewer"]',
+          '.popup-container',
+          '.overlay',
+          '._2KKXC',
+          '._3ndVb',
+          '[data-testid="menu"]',
+          '[role="menu"]',
+          '[role="listbox"]',
+          '.emoji-picker'
+        ];
+        return overlaySelectors.some(sel => document.querySelector(sel));
+      }
+
+      // Check if user is selecting text anywhere
+      function isSelectingText() {
+        const selection = window.getSelection();
+        return selection && selection.toString().length > 0;
+      }
+
+      // Check if active element is within sidebar (contact list, settings, etc)
+      function isInSidebar() {
+        const active = document.activeElement;
+        if (!active) return false;
+        const sidebar = document.querySelector('#side');
+        return sidebar && sidebar.contains(active);
+      }
+
+      // Force focus to the message input
+      function forceFocus() {
+        if (!focusEnabled) return;
+        if (isOverlayOpen()) return;
+        if (isSelectingText()) return;
+        if (isInSidebar()) return;
+
+        const now = Date.now();
+        if (now - lastFocusTime < 50) return; // Debounce
+
+        const input = getMessageInput();
+        if (!input) return;
+
+        const active = document.activeElement;
+
+        // If already focused on the input, do nothing
+        if (active === input || input.contains(active)) return;
+
+        // If focused on another interactive element (like search), allow it
+        if (isInteractiveElement(active) && active !== document.body) return;
+
+        // Force focus
+        lastFocusTime = now;
+        input.focus({ preventScroll: true });
+      }
+
+      // Main check loop - runs every 100ms
+      function startFocusGuard() {
+        if (focusCheckInterval) clearInterval(focusCheckInterval);
+        focusCheckInterval = setInterval(forceFocus, 100);
+      }
+
+      // Intercept blur events on the input to immediately refocus
+      function setupBlurInterceptor() {
+        document.addEventListener('focusout', (e) => {
+          const input = getMessageInput();
+          if (!input) return;
+          if (e.target !== input && !input.contains(e.target)) return;
+
+          // Schedule immediate refocus
+          requestAnimationFrame(() => {
+            setTimeout(forceFocus, 0);
+          });
+        }, true);
+      }
+
+      // Handle visibility changes (tab switch, etc)
+      function setupVisibilityHandler() {
+        document.addEventListener('visibilitychange', () => {
+          if (document.visibilityState === 'visible') {
+            setTimeout(forceFocus, 100);
+          }
+        });
+      }
+
+      // Handle window focus
+      function setupWindowFocusHandler() {
+        window.addEventListener('focus', () => {
+          setTimeout(forceFocus, 50);
+        });
+      }
+
+      // Handle clicks outside the input
+      function setupClickHandler() {
+        document.addEventListener('click', (e) => {
+          if (isOverlayOpen()) return;
 
           const input = getMessageInput();
-          if (input && document.body.contains(input)) {
-            const selection = window.getSelection();
-            const hadSelection = selection && selection.rangeCount > 0;
-            let savedRange = null;
-            if (hadSelection && input.contains(selection.anchorNode)) {
-              savedRange = selection.getRangeAt(0).cloneRange();
-            }
+          if (!input) return;
 
-            input.focus();
+          // If clicking on an interactive element, allow it
+          if (isInteractiveElement(e.target)) return;
 
-            if (savedRange) {
-              selection.removeAllRanges();
-              selection.addRange(savedRange);
-            }
+          // If clicking in the main chat area (not sidebar), refocus
+          const main = document.querySelector('#main');
+          if (main && main.contains(e.target) && !input.contains(e.target)) {
+            requestAnimationFrame(() => {
+              setTimeout(forceFocus, 10);
+            });
           }
-        }, 50);
+        }, true);
       }
 
-      document.addEventListener('focusout', (e) => {
-        const input = getMessageInput();
-        if (input && (e.target === input || input.contains(e.target))) {
-          lastInputElement = input;
-          setTimeout(() => {
-            if (!isValidFocusTarget(document.activeElement)) {
-              refocusInput();
-            }
-          }, 10);
-        }
-      }, true);
-
-      document.addEventListener('click', (e) => {
-        if (isModalOrPopupOpen()) return;
-        if (isValidFocusTarget(e.target)) return;
-
-        const input = getMessageInput();
-        if (input && !input.contains(e.target)) {
-          const chatArea = document.querySelector('#main');
-          if (chatArea && chatArea.contains(e.target)) {
-            refocusInput();
+      // Watch for DOM changes that might affect the input
+      function setupDomObserver() {
+        const observer = new MutationObserver(() => {
+          const input = getMessageInput();
+          if (input && input !== lastKnownInput) {
+            lastKnownInput = input;
+            setTimeout(forceFocus, 50);
           }
-        }
-      }, true);
+        });
 
-      const inputObserver = new MutationObserver(() => {
-        const input = getMessageInput();
-        if (input && input !== lastInputElement) {
-          lastInputElement = input;
-        }
-      });
+        observer.observe(document.body, {
+          childList: true,
+          subtree: true
+        });
+      }
 
-      inputObserver.observe(document.body, {
-        childList: true,
-        subtree: true
-      });
+      // Expose control functions for debugging
+      window._whatsieFocusControl = {
+        enable: () => { focusEnabled = true; startFocusGuard(); },
+        disable: () => { focusEnabled = false; clearInterval(focusCheckInterval); },
+        forceFocus: forceFocus,
+        status: () => ({ enabled: focusEnabled, input: getMessageInput(), overlay: isOverlayOpen() })
+      };
 
-      console.log('[Whatsie] Input focus keeper installed');
+      // Initialize all handlers
+      setupBlurInterceptor();
+      setupVisibilityHandler();
+      setupWindowFocusHandler();
+      setupClickHandler();
+      setupDomObserver();
+      startFocusGuard();
+
+      console.log('[Whatsie] Focus keeper v2 installed - aggressive mode');
     })();
   )";
   this->runJavaScript(js);
