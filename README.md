@@ -2,6 +2,18 @@
 
 Feature rich WhatsApp web client based on Qt WebEngine for Linux Desktop
 
+---
+
+> **⚠️ PERSONAL FORK - INPUT FOCUS FIX**
+>
+> This is my personal fork of Whatsie. The main goal is to fix the extremely annoying input focus bug in WhatsApp Web where the message input field constantly loses focus, making it impossible to type properly.
+>
+> **The problem:** WhatsApp Web loses focus on the message input field randomly, especially after clicking anywhere in the chat area, closing popups, or switching windows.
+>
+> **My solution:** Aggressive JavaScript injection that forces focus back to the input field (see `src/webenginepage.cpp` - Focus Keeper v4).
+
+---
+
 ## Fork Improvements
 
 This fork includes several improvements over the original project:
