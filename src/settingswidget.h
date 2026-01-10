@@ -73,6 +73,7 @@ private slots:
   void on_muteAudioCheckBox_toggled(bool checked);
   void on_notificationCheckBox_toggled(bool checked);
   void on_notificationCombo_currentIndexChanged(int index);
+  void on_notificationPositionCombo_currentIndexChanged(int index);
   void on_notificationTimeOutspinBox_valueChanged(int arg1);
   void on_resetAppAutoLockPushButton_clicked();
   void on_setUserAgent_clicked();

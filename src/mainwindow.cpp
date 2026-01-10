@@ -568,10 +568,6 @@ void MainWindow::showNotification(QString title, QString message) {
     connect(popup, &NotificationPopup::notification_clicked, this,
             [=]() { notificationClicked(); });
 
-    popup->style()->polish(qApp);
-    popup->setMinimumWidth(300);
-    popup->adjustSize();
-
     QScreen *screen = QGuiApplication::primaryScreen();
     if (screen) {
       popup->present(screen, title, message,

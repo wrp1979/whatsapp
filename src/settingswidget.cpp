@@ -77,6 +77,11 @@ SettingsWidget::SettingsWidget(QWidget *parent, int screenNumber,
                                              .settings()
                                              .value("notificationCombo", 1)
                                              .toInt());
+  ui->notificationPositionCombo->setCurrentIndex(
+      SettingsManager::instance()
+          .settings()
+          .value("notificationPosition", 0)
+          .toInt());
   ui->useNativeFileDialog->setChecked(SettingsManager::instance()
                                           .settings()
                                           .value("useNativeFileDialog", false)
@@ -649,6 +654,10 @@ void SettingsWidget::on_notificationTimeOutspinBox_valueChanged(int arg1) {
 
 void SettingsWidget::on_notificationCombo_currentIndexChanged(int index) {
   SettingsManager::instance().settings().setValue("notificationCombo", index);
+}
+
+void SettingsWidget::on_notificationPositionCombo_currentIndexChanged(int index) {
+  SettingsManager::instance().settings().setValue("notificationPosition", index);
 }
 
 void SettingsWidget::on_tryNotification_clicked() {
