@@ -4,30 +4,37 @@ Fork do Whatsie com melhorias de performance e correcoes de bugs.
 
 ## Build
 
-**IMPORTANTE**: Sempre use o script de build para compilar. Nunca use `make` diretamente.
+**CRITICO - LEIA ANTES DE COMPILAR**:
+- **SEMPRE** use `./build.sh` para compilar
+- **NUNCA** use `make` diretamente (o BUILD_NUM nao atualiza)
+- **NUNCA** use `qmake` diretamente
+- Apos modificar codigo, rode `./build.sh` e depois `./build.sh run` para testar
 
 ```bash
 # Compilar (incrementa build number automaticamente)
 ./build.sh
 
-# Limpar e recompilar do zero
-./build.sh rebuild
-
-# Executar o app
+# Executar o app apos compilar
 ./build.sh run
+
+# Compilar E executar em sequencia
+./build.sh && ./build.sh run
+
+# Limpar e recompilar do zero (se tiver problemas)
+./build.sh rebuild
 
 # Ver versao atual
 ./build.sh version
-
-# Apenas limpar
-./build.sh clean
 ```
 
 O script `build.sh` automaticamente:
 1. Incrementa o numero do build em `src/BUILD_NUMBER`
-2. Roda qmake para gerar o Makefile atualizado
-3. Compila com todos os cores disponiveis
-4. Mostra a versao final
+2. Deleta main.o e mainwindow.o para forcar recompilacao com novo BUILD_NUM
+3. Roda qmake para gerar o Makefile atualizado
+4. Compila com todos os cores disponiveis (-j32)
+5. Mostra a versao final
+
+**Se o build number nao atualizar na janela**: use `./build.sh rebuild` para forcar recompilacao total.
 
 ## Estrutura do Projeto
 
