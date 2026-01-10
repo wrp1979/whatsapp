@@ -14,6 +14,7 @@
 #include <QPainterPath>
 #include <QProgressBar>
 #include <QPropertyAnimation>
+#include <QPushButton>
 #include <QParallelAnimationGroup>
 #include <QScreen>
 #include <QTimer>
@@ -152,6 +153,31 @@ private:
 
     textLayout->addStretch();
     contentLayout->addWidget(textContainer, 1);
+
+    // Botao de fechar
+    auto *closeBtn = new QPushButton(m_contentWidget);
+    closeBtn->setFixedSize(24, 24);
+    closeBtn->setCursor(Qt::PointingHandCursor);
+    closeBtn->setStyleSheet(
+      "QPushButton {"
+      "  background-color: transparent;"
+      "  border: none;"
+      "  border-radius: 12px;"
+      "  color: rgba(255, 255, 255, 0.5);"
+      "  font-size: 16px;"
+      "  font-weight: bold;"
+      "}"
+      "QPushButton:hover {"
+      "  background-color: rgba(255, 255, 255, 0.1);"
+      "  color: rgba(255, 255, 255, 0.9);"
+      "}"
+      "QPushButton:pressed {"
+      "  background-color: rgba(255, 255, 255, 0.15);"
+      "}"
+    );
+    closeBtn->setText(QString::fromUtf8("\u00D7")); // Unicode multiplication sign (cleaner X)
+    connect(closeBtn, &QPushButton::clicked, this, &NotificationPopup::onClosed);
+    contentLayout->addWidget(closeBtn, 0, Qt::AlignTop);
 
     // Barra de progresso no fundo
     m_progressBar = new QProgressBar(m_contentWidget);
