@@ -22,7 +22,7 @@ MainWindow::MainWindow(QWidget *parent)
       m_unreadMessageCountRegExp("\\([^\\d]*(\\d+)[^\\d]*\\)") {
 
   setObjectName("MainWindow");
-  setWindowTitle(QApplication::applicationName());
+  setWindowTitle(QApplication::applicationName() + " (build " + QString::number(BUILD_NUM) + ")");
   setWindowIcon(QIcon(":/icons/app/icon-64.png"));
   setMinimumWidth(525);
   setMinimumHeight(448);
@@ -1057,7 +1057,7 @@ void MainWindow::fullScreenRequested(QWebEngineFullScreenRequest request) {
 }
 
 void MainWindow::handleWebViewTitleChanged(const QString &title) {
-  setWindowTitle(QApplication::applicationName() + ": " + title);
+  setWindowTitle(QApplication::applicationName() + " (build " + QString::number(BUILD_NUM) + "): " + title);
 
   QRegularExpressionMatch notificationsTitleMatch =
       m_notificationsTitleRegExp.match(title);

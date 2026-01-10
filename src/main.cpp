@@ -119,8 +119,8 @@ int main(int argc, char *argv[]) {
 
     qInfo().noquote()
         << parser.applicationDescription() << "\n"
-        << QStringLiteral("version: %1, branch: %2, commit: %3, built_at: %4")
-               .arg(VERSIONSTR, GIT_BRANCH, GIT_HASH, BUILD_TIMESTAMP);
+        << QStringLiteral("version: %1 (build %5), branch: %2, commit: %3, built_at: %4")
+               .arg(VERSIONSTR, GIT_BRANCH, GIT_HASH, BUILD_TIMESTAMP, QString::number(BUILD_NUM));
     return 0;
   }
 
