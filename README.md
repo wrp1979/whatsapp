@@ -98,30 +98,47 @@ The source code can be built using the regular Qt application development proced
 	+ positioning
 	
 ### Build steps
- 
+
+> **IMPORTANT**: Always use `./build.sh` to compile. Never run `make` or `qmake` directly, as the build number won't update correctly.
+
  1. **Clone** source code
 
  	`git clone https://github.com/keshavbhatt/whatsie.git`
 
- 2. Enter into source directory  
-	
-	`cd whatsie/src`  
-	
- 3. Run **qmake** (use `qmake6` on systems where Qt5 is default)
+ 2. Enter into source directory
 
-	`qmake6`
-	
- 4. Run **make** (with optional **-j** option that specify jobs or commands to run simultaneously while building)
- 
-	`make -j4`  
-	
- 5. **Run built whatsie** executable (if build finished with no errors)
- 
-	`./whatsie`
-	
- 5. Run **make install** if you want to install (if build finished with no errors)
- 
-	`sudo make install`
+	`cd whatsie`
+
+ 3. **Build** using the build script (auto-increments build number)
+
+	```bash
+	./build.sh
+	```
+
+ 4. **Run** the built executable
+
+	```bash
+	./build.sh run
+	```
+
+ 5. **(Optional)** Other build commands:
+
+	```bash
+	./build.sh rebuild  # Clean and rebuild from scratch
+	./build.sh version  # Show current version info
+	./build.sh clean    # Clean build artifacts
+	```
+
+ 6. **(Optional)** Install system-wide
+
+	```bash
+	cd build && sudo make install
+	```
+
+### Troubleshooting
+
+- **Build number not updating in window title?** Run `./build.sh rebuild` to force full recompilation.
+- **Permission denied on build.sh?** Run `chmod +x build.sh` first.
 
 
 
