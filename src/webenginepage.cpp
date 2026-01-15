@@ -432,6 +432,7 @@ void WebEnginePage::injectInputFocusKeeper() {
 
       let enabled = true;
       let lastModalState = false;
+      let wheelPauseUntil = 0;
 
       // Hidden input for WebKit focus workaround
       const hiddenInput = document.createElement('input');
@@ -457,37 +458,40 @@ void WebEnginePage::injectInputFocusKeeper() {
         return null;
       }
 
-      // Check if image/media editor overlay is open (paste image, send file, etc)
-      function hasMediaEditor() {
-        // The image editor toolbar/overlay
-        if (document.querySelector('[data-testid="media-editor"]')) return true;
-        if (document.querySelector('[data-testid="image-editor"]')) return true;
-        // The draw/edit tools bar visible in screenshot
-        if (document.querySelector('[data-testid="media-canvas-container"]')) return true;
-        // Media preview panel (when you paste/attach image)
-        if (document.querySelector('[data-testid="media-preview"]')) return true;
-        // Check for the X button that closes media editor
-        if (document.querySelector('[data-testid="x-viewer"]')) return true;
-        // Any overlay with image editing tools
-        const overlay = document.querySelector('#app > div > span:nth-child(4) > div');
-        if (overlay && overlay.querySelector('[data-testid="send"]')) return true;
+      // Check if there's any overlay/modal open (image paste, file send, etc)
+      function hasAnyOverlay() {
+        // Check for any span overlay in #app (WhatsApp uses spans for modals)
+        const spans = document.querySelectorAll('#app > div > span');
+        for (const span of spans) {
+          // If span has visible content with a send button or close button, it's a modal
+          if (span.querySelector('[data-testid="send"]')) return true;
+          if (span.querySelector('[data-testid="x-viewer"]')) return true;
+          if (span.querySelector('[data-icon="x-viewer"]')) return true;
+          if (span.querySelector('[data-icon="x"]')) return true;
+          // Check for any contenteditable inside span overlays
+          const ce = span.querySelector('[contenteditable="true"]');
+          if (ce) {
+            // Make sure it's not inside #main (the main chat area)
+            const main = document.querySelector('#main');
+            if (!main || !main.contains(ce)) return true;
+          }
+        }
         return false;
       }
 
-      // Only block focus when these specific modals are open
+      // Only block focus stealing when modals/overlays are open
       function hasBlockingModal() {
-        // Media editor - user might want to type caption
-        if (hasMediaEditor()) return true;
+        // Generic overlay detection first (catches image paste, file send, etc)
+        if (hasAnyOverlay()) return true;
+        // Specific modals
+        if (document.querySelector('[data-testid="media-editor"]')) return true;
+        if (document.querySelector('[data-testid="image-editor"]')) return true;
         if (document.querySelector('[data-testid="media-editor-modal"]')) return true;
         if (document.querySelector('[data-testid="media-picker-modal"]')) return true;
         if (document.querySelector('[data-testid="forward-message-modal"]')) return true;
         if (document.querySelector('[data-testid="popup-contents"]')) return true;
         if (document.querySelector('[role="dialog"][aria-modal="true"]')) return true;
-        // Generic overlay detection - if there's a modal-like overlay
-        const appOverlays = document.querySelectorAll('#app > div > span > div[tabindex="-1"]');
-        for (const ov of appOverlays) {
-          if (ov.querySelector('input, textarea, [contenteditable="true"]')) return true;
-        }
+        if (document.querySelector('[data-testid="media-canvas-container"]')) return true;
         return false;
       }
 
@@ -537,11 +541,17 @@ void WebEnginePage::injectInputFocusKeeper() {
         target.focus({ preventScroll: true, focusVisible: true });
       }
 
+      function pauseFocusFor(ms) {
+        const until = Date.now() + ms;
+        if (until > wheelPauseUntil) wheelPauseUntil = until;
+      }
+
       // BRUTAL force focus with WebKit workaround
       function brutalFocus() {
         if (!enabled) return;
         if (hasBlockingModal()) return;
         if (isOnOtherInput()) return;
+        if (Date.now() < wheelPauseUntil) return;
 
         const input = getInput();
         if (!input) return;
@@ -556,8 +566,8 @@ void WebEnginePage::injectInputFocusKeeper() {
         webkitFocusFix(input);
       }
 
-      // Ultra aggressive loop - 25ms interval
-      let intervalId = setInterval(brutalFocus, 25);
+      // Aggressive loop - 50ms interval (balanced between responsiveness and not blocking paste)
+      let intervalId = setInterval(brutalFocus, 50);
 
       // RAF loop for smooth focus
       let rafEnabled = true;
@@ -619,6 +629,18 @@ void WebEnginePage::injectInputFocusKeeper() {
         }
       }, true);
 
+      // Pause aggressive focus while the user is scrolling messages with the wheel
+      document.addEventListener('wheel', (e) => {
+        if (hasBlockingModal()) return;
+        const main = document.querySelector('#main');
+        if (!main || !main.contains(e.target)) return;
+
+        const footer = document.querySelector('#main footer');
+        if (footer && footer.contains(e.target)) return;
+
+        pauseFocusFor(800);
+      }, { passive: true, capture: true });
+
       // On any click in main area, force focus after
       document.addEventListener('click', (e) => {
         if (hasBlockingModal()) return;
@@ -671,13 +693,46 @@ void WebEnginePage::injectInputFocusKeeper() {
         }
       }, true);
 
+      // IMPORTANT: Pause focus keeper on paste to allow image modal to appear
+      let pasteTimeout = null;
+      document.addEventListener('paste', (e) => {
+        // Check if paste contains files/images
+        const hasFiles = e.clipboardData && (
+          e.clipboardData.files.length > 0 ||
+          Array.from(e.clipboardData.items || []).some(item => item.type.startsWith('image/'))
+        );
+
+        if (hasFiles) {
+          console.log('[Whatsie] Image paste detected - pausing focus keeper for 3s');
+          enabled = false;
+          rafEnabled = false;
+          clearInterval(intervalId);
+
+          // Re-enable after 3 seconds
+          if (pasteTimeout) clearTimeout(pasteTimeout);
+          pasteTimeout = setTimeout(() => {
+            // Only re-enable if no modal is open
+            if (!hasBlockingModal()) {
+              enabled = true;
+              rafEnabled = true;
+              intervalId = setInterval(brutalFocus, 50);
+              requestAnimationFrame(rafLoop);
+              console.log('[Whatsie] Focus keeper re-enabled after paste');
+            } else {
+              // Check again later
+              pasteTimeout = setTimeout(arguments.callee, 1000);
+            }
+          }, 3000);
+        }
+      }, true);
+
       // Debug controls
       window._whatsieFocusControl = {
         enable: () => {
           enabled = true;
           rafEnabled = true;
           clearInterval(intervalId);
-          intervalId = setInterval(brutalFocus, 25);
+          intervalId = setInterval(brutalFocus, 50);
           requestAnimationFrame(rafLoop);
           console.log('[Whatsie] Focus keeper enabled');
         },
