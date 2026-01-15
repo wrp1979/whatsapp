@@ -18,7 +18,6 @@ extern bool defaultAppAutoLock;
 MainWindow::MainWindow(QWidget *parent)
     : QMainWindow(parent),
       m_trayIconNormal(":/icons/app/notification/whatsie-notify.png"),
-      m_notificationsTitleRegExp("^\\([1-9]\\d*\\).*"),
       m_unreadMessageCountRegExp("\\([^\\d]*(\\d+)[^\\d]*\\)") {
 
   setObjectName("MainWindow");
@@ -1056,35 +1055,32 @@ void MainWindow::fullScreenRequested(QWebEngineFullScreenRequest request) {
 void MainWindow::handleWebViewTitleChanged(const QString &title) {
   setWindowTitle(QApplication::applicationName() + " (build " + QString::number(BUILD_NUM) + "): " + title);
 
-  QRegularExpressionMatch notificationsTitleMatch =
-      m_notificationsTitleRegExp.match(title);
+  QRegularExpressionMatch unreadMessageCountMatch =
+      m_unreadMessageCountRegExp.match(title);
 
-  if (notificationsTitleMatch.hasMatch()) {
+  if (unreadMessageCountMatch.hasMatch()) {
+    QString unreadMessageCountStr = unreadMessageCountMatch.captured(1);
+    int unreadMessageCount = unreadMessageCountStr.toInt();
 
-    QString capturedTitle = notificationsTitleMatch.captured(0);
-
-    QRegularExpressionMatch unreadMessageCountMatch =
-        m_unreadMessageCountRegExp.match(capturedTitle);
-
-    if (unreadMessageCountMatch.hasMatch()) {
-
-      QString unreadMessageCountStr = unreadMessageCountMatch.captured(1);
-
-      int unreadMessageCount = unreadMessageCountStr.toInt();
-
+    if (unreadMessageCount > 0) {
       m_restoreAction->setText(
           tr("Restore") + " | " + unreadMessageCountStr + " " +
           (unreadMessageCount > 1 ? tr("messages") : tr("message")));
 
-      m_systemTrayIcon->setIcon(getTrayIcon(unreadMessageCount));
-
-      setWindowIcon(getTrayIcon(unreadMessageCount));
+      const QIcon badgeIcon = getTrayIcon(unreadMessageCount);
+      if (m_systemTrayIcon) {
+        m_systemTrayIcon->setIcon(badgeIcon);
+      }
+      setWindowIcon(badgeIcon);
+      return;
     }
-  } else {
-    m_systemTrayIcon->setIcon(m_trayIconNormal);
-
-    setWindowIcon(m_trayIconNormal);
   }
+
+  m_restoreAction->setText(tr("&Restore"));
+  if (m_systemTrayIcon) {
+    m_systemTrayIcon->setIcon(m_trayIconNormal);
+  }
+  setWindowIcon(m_trayIconNormal);
 }
 
 void MainWindow::handleLoadFinished(bool loaded) {
@@ -1183,17 +1179,31 @@ void MainWindow::handleDownloadRequested(QWebEngineDownloadRequest *download) {
 }
 
 void MainWindow::iconActivated(QSystemTrayIcon::ActivationReason reason) {
-  if (SettingsManager::instance()
-              .settings()
-              .value("minimizeOnTrayIconClick", false)
-              .toBool() == false ||
-      reason == QSystemTrayIcon::Context)
+  if (reason == QSystemTrayIcon::Context) {
     return;
-  if (isVisible()) {
-    hide();
-  } else {
-    this->show();
   }
+
+  if (reason != QSystemTrayIcon::Trigger &&
+      reason != QSystemTrayIcon::DoubleClick &&
+      reason != QSystemTrayIcon::MiddleClick &&
+      reason != QSystemTrayIcon::Unknown) {
+    return;
+  }
+
+  const bool toggleOnClick = SettingsManager::instance()
+                                 .settings()
+                                 .value("minimizeOnTrayIconClick", false)
+                                 .toBool();
+  if (toggleOnClick) {
+    if (isVisible()) {
+      hide();
+    } else {
+      notificationClicked();
+    }
+    return;
+  }
+
+  notificationClicked();
 }
 
 void MainWindow::doAppReload() {

@@ -93,7 +93,6 @@ private:
   void restoreMainWindow();
 
   QIcon m_trayIconNormal;
-  QRegularExpression m_notificationsTitleRegExp;
   QRegularExpression m_unreadMessageCountRegExp;
   DownloadManagerWidget m_downloadManagerWidget;
   QScopedPointer<QWebEngineProfile> m_otrProfile;
