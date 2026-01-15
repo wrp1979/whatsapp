@@ -8,6 +8,7 @@
 #include <QIcon>
 #include <QMainWindow>
 #include <QMenu>
+#include <QPointer>
 #include <QMessageBox>
 #include <QProgressBar>
 #include <QRadioButton>
@@ -122,7 +123,7 @@ private:
   QString userDesktopEnvironment = Utils::detectDesktopEnvironment();
 
   void notificationClicked();
-  NotificationPopup *m_webengine_notifier_popup = nullptr;
+  QPointer<NotificationPopup> m_webengine_notifier_popup;
 private slots:
   void iconActivated(QSystemTrayIcon::ActivationReason reason);
   void toggleMute(const bool &checked);

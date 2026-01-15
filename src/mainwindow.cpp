@@ -972,7 +972,7 @@ void MainWindow::setNotificationPresenter(QWebEngineProfile *profile) {
           this, [this]() { notificationClicked(); });
 
   profile->setNotificationPresenter(
-      [&](std::unique_ptr<QWebEngineNotification> notification) {
+      [this](std::unique_ptr<QWebEngineNotification> notification) {
         QSettings &settings = SettingsManager::instance().settings();
         bool disableNotificationPopups =
             settings.value("disableNotificationPopups", false).toBool();
@@ -992,10 +992,10 @@ void MainWindow::setNotificationPresenter(QWebEngineProfile *profile) {
                           this,
                           [notificationPtr]() {
                             if (notificationPtr) {
-                              qWarning() << "notificationPtr clciked";
+                              qWarning() << "notificationPtr clicked";
                               notificationPtr->click();
                             }
-                            qWarning() << "notificationPtr clciked Ok";
+                            qWarning() << "notificationPtr clicked Ok";
                           },
                           Qt::QueuedConnection);
                     });
@@ -1015,8 +1015,9 @@ void MainWindow::setNotificationPresenter(QWebEngineProfile *profile) {
           return;
         }
 
-        if (!m_webengine_notifier_popup) {
-          qWarning() << "Popup is not available!";
+        // Double-check popup is still valid (QPointer becomes null if deleted)
+        if (m_webengine_notifier_popup.isNull()) {
+          qWarning() << "Popup was deleted, skipping notification";
           return;
         }
 
