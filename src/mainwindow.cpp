@@ -376,7 +376,9 @@ void MainWindow::changeEvent(QEvent *e) {
               "setTimeout(() => {"
               "  const editor = document.querySelector('div[contenteditable=\"true\"][data-tab=\"10\"]') || "
               "                 document.querySelector('footer div[contenteditable=\"true\"]');"
-              "  if (editor) { editor.focus(); }"
+              "  const sel = window.getSelection && window.getSelection();"
+              "  const hasSelection = sel && !sel.isCollapsed && sel.rangeCount > 0;"
+              "  if (editor && !hasSelection) { editor.focus(); }"
               "}, 100);"
           );
       }
