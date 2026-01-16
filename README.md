@@ -152,6 +152,45 @@ The source code can be built using the regular Qt application development proced
 - **Build number not updating in window title?** Run `./build.sh rebuild` to force full recompilation.
 - **Permission denied on build.sh?** Run `chmod +x build.sh` first.
 
+## Packaging and Releases
+
+### One-command (Linux + Windows + GitHub Release)
+
+```bash
+./setup.sh --tag v4.16.3
+```
+
+By default it builds Linux packages, cross-compiles Windows via MXE, and uploads `.deb`, `.AppImage`, and `.exe` to the GitHub Release.
+
+### Linux (.deb + AppImage)
+
+```bash
+./build.sh
+./package_linux.sh --all
+```
+
+Artifacts are generated in `build/package/out/`.
+
+### Windows (.exe installer via MXE on Linux)
+
+Requires MXE + NSIS installed locally.
+
+```bash
+./build_windows_mxe.sh --static   # or --shared
+./package_windows_mxe.sh --static
+```
+
+### GitHub Releases (automated)
+
+Push a tag like `v4.16.3` and GitHub Actions will build and publish:
+
+```bash
+git tag v4.16.3
+git push origin v4.16.3
+```
+
+Artifacts are attached to the GitHub Release as `.deb`, `.AppImage`, and `.exe`.
+
 
 
 ## Install Whatsie on Linux Desktop

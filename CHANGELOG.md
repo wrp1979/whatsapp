@@ -1,3 +1,66 @@
+## 4.16.3 (build 42) - 2026-01-16
+
+#### 🎁 Feature
+* feat(focus): add modifier key pause and toast notifications
+* feat: rewrite focus keeper v4 with brutal mode and WebKit fix
+* feat: add close button to notification popup
+* feat: redesign notification popup with modern UI
+* feat: display build number in version info and window title
+* feat: add build script with auto-incrementing build number
+* feat: add input focus keeper to maintain message field focus
+* feat: add system theme option that follows OS theme
+* feat: Add secure compilation flags
+
+#### 🐞 Bug Fixes
+* fix(focus): simplify modifier detection to Ctrl-only
+* fix(focus): preserve text selection on window activation
+* fix(focus): improve overlay detection and prevent interference with paste/scroll
+* fix(notifications): use QPointer and fix typos in notification presenter
+* fix: force recompilation of main.o and mainwindow.o on build number increment
+* fix: replace deprecated Qt5 APIs with Qt6 equivalents
+* fix: migrate to Qt6 WebEngine API
+* fix: prevent crashes due to custom notification
+* fix: improve notification handling
+* fix: Notification issue on gnome shell + minor improvements (#202)
+* fix: change zoom factor when app starts minimized in systray
+* fix: set QTWEBENGINE_DICTIONARIES_PATH to fix spell checker (#199)
+
+#### 🧹 Refactor
+* refactor(title): simplify unread badge logic and fix tray icon click handling
+* refactor: rewrite input focus keeper with aggressive mode
+* refactor: remove RateApp and MoreApps widgets
+
+#### 📚 Docs
+* docs: add AGENTS.md configuration
+* docs: add personal fork notice and input focus fix goal to README
+* docs: update build instructions to use build.sh script
+* docs: add prominent warning about personal fork and input focus fix goal
+* docs: improve build instructions and add troubleshooting tips
+* docs: add AI agent instruction files
+* docs: document fork improvements and Qt6 migration
+
+#### 🚧 Chores
+* chore: bump build number to 30
+* chore: bump build number to 29
+* chore: bump build number to 24
+* chore: bump build number to 19
+* chore: remove AGENT.md from repo and update gitignore
+* chore: ignore AI agent config files (AGENTS.md, GEMINI.md)
+* chore: bump build number to 16
+* chore: bump build number to 11
+* chore: bump build number to 9
+* chore: update user agent and fix desktop file
+* chore: version bump to 4.16.3
+* chore: version bump to 4.16.2
+* chore: release 4.16.1
+* chore: version bump to 14.5.6
+* chore: bump version and update metadata
+* chore: update screenshot
+* chore: update screenshots
+* chore: bump version 4.15.3
+* chore: update svg icon text object to path
+
+
 ## 4.16.0 (2024-10-09)
 
 #### 🎁 Feature
