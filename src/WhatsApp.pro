@@ -44,6 +44,7 @@ qtConfig(webengine-native-spellchecker) {
 TARGET = whatsie
 TEMPLATE = app
 linux: LIBS += -L/usr/X11/lib -lX11
+win32: LIBS += -luser32 -ladvapi32
 
 include(singleapplication/singleapplication.pri)
 DEFINES += QAPPLICATION_CLASS=QApplication
