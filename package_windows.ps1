@@ -50,10 +50,10 @@ if (-not $SkipDeploy) {
     }
 
     Copy-Item $exePath $DeployDir
-    & $windeployqt.Source --release --no-translations --webengine (Join-Path $DeployDir "whatsie.exe")
+    & $windeployqt.Source --release --no-translations (Join-Path $DeployDir "whatsie.exe")
 }
 
-$versionLine = Select-String -Path (Join-Path $root "src\\WhatsApp.pro") -Pattern "^VERSION\\s*="
+$versionLine = Select-String -Path (Join-Path $root "src\\WhatsApp.pro") -Pattern "^\\s*VERSION\\s*="
 if (-not $versionLine) {
     throw "VERSION not found in src/WhatsApp.pro"
 }
