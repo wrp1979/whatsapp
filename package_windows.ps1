@@ -2,6 +2,7 @@ param(
     [string]$BuildDir = "build-windows",
     [string]$OutDir = "dist/windows",
     [string]$DeployDir = "",
+    [string]$Version = "",
     [switch]$SkipDeploy
 )
 
@@ -53,12 +54,16 @@ if (-not $SkipDeploy) {
     & $windeployqt.Source --release --no-translations (Join-Path $DeployDir "whatsie.exe")
 }
 
-$proPath = Join-Path $root "src\\WhatsApp.pro"
-$proContent = Get-Content $proPath -Raw
-if ($proContent -match "(?m)^\\s*VERSION\\s*=\\s*([^\\r\\n]+)") {
-    $version = $Matches[1].Trim()
+if ([string]::IsNullOrWhiteSpace($Version)) {
+    $proPath = Join-Path $root "src\\WhatsApp.pro"
+    $proContent = Get-Content $proPath -Raw
+    if ($proContent -match "(?m)^\\s*VERSION\\s*=\\s*([^\\r\\n]+)") {
+        $version = $Matches[1].Trim()
+    } else {
+        throw "VERSION not found in src/WhatsApp.pro"
+    }
 } else {
-    throw "VERSION not found in src/WhatsApp.pro"
+    $version = $Version
 }
 
 $buildNum = "0"
