@@ -54,11 +54,12 @@ if (-not $SkipDeploy) {
 }
 
 $proPath = Join-Path $root "src\\WhatsApp.pro"
-$versionLine = Get-Content $proPath | Where-Object { $_ -match "^\\s*VERSION\\s*=" } | Select-Object -First 1
-if (-not $versionLine) {
+$proContent = Get-Content $proPath -Raw
+if ($proContent -match "(?m)^\\s*VERSION\\s*=\\s*([^\\r\\n]+)") {
+    $version = $Matches[1].Trim()
+} else {
     throw "VERSION not found in src/WhatsApp.pro"
 }
-$version = ($versionLine -split "=")[1].Trim()
 
 $buildNum = "0"
 $buildNumFile = Join-Path $root "src\\BUILD_NUMBER"
