@@ -433,6 +433,12 @@ void WebEnginePage::injectInputFocusKeeper() {
       let enabled = true;
       let lastModalState = false;
       let wheelPauseUntil = 0;
+      let mouseDownInMain = false;
+      let mouseDownInFooter = false;
+      let modifierHeld = false;
+      let pausedByModifier = false;
+      let toastTimer = null;
+      let lastToast = null;
 
       // Hidden input for WebKit focus workaround
       const hiddenInput = document.createElement('input');
@@ -546,12 +552,89 @@ void WebEnginePage::injectInputFocusKeeper() {
         if (until > wheelPauseUntil) wheelPauseUntil = until;
       }
 
+      function showFocusToast(message, type) {
+        const id = 'whatsie-focus-toast';
+        let el = document.getElementById(id);
+        if (!el) {
+          el = document.createElement('div');
+          el.id = id;
+          el.style.cssText =
+            'position:fixed;left:50%;bottom:18px;transform:translateX(-50%);' +
+            'padding:8px 12px;border-radius:6px;font:12px/1.4 Arial, sans-serif;' +
+            'background:rgba(20,20,20,0.92);color:#fff;z-index:999999;' +
+            'box-shadow:0 4px 12px rgba(0,0,0,0.35);pointer-events:none;' +
+            'transition:opacity 120ms ease;opacity:0;';
+          document.body.appendChild(el);
+        }
+        if (lastToast === message) return;
+        lastToast = message;
+        el.textContent = message;
+        if (type === 'pause') {
+          el.style.background = 'rgba(132, 76, 0, 0.95)';
+        } else if (type === 'resume') {
+          el.style.background = 'rgba(0, 102, 68, 0.95)';
+        } else {
+          el.style.background = 'rgba(20,20,20,0.92)';
+        }
+        el.style.opacity = '1';
+        if (toastTimer) clearTimeout(toastTimer);
+        toastTimer = setTimeout(() => {
+          el.style.opacity = '0';
+        }, 1200);
+      }
+
+      function setModifierHeld(next) {
+        if (modifierHeld === next) return;
+        modifierHeld = next;
+        if (modifierHeld) {
+          pausedByModifier = true;
+          showFocusToast('Focus paused (hold Ctrl/Alt/Shift)', 'pause');
+        }
+        if (!modifierHeld) {
+          setTimeout(brutalFocus, 0);
+          setTimeout(brutalFocus, 50);
+        }
+      }
+
+      function eventHasModifier(e) {
+        if (!e) return modifierHeld;
+        if (e.getModifierState) {
+          return e.getModifierState('Alt') ||
+                 e.getModifierState('Control') ||
+                 e.getModifierState('Shift') ||
+                 e.getModifierState('Meta');
+        }
+        return !!(e.altKey || e.ctrlKey || e.shiftKey || e.metaKey);
+      }
+
+      function hasActiveMainSelection() {
+        const sel = window.getSelection ? window.getSelection() : null;
+        if (!sel || sel.rangeCount === 0 || sel.isCollapsed) return false;
+
+        const main = document.querySelector('#main');
+        if (!main) return false;
+
+        const footer = document.querySelector('#main footer');
+        const anchor = sel.anchorNode;
+        const focus = sel.focusNode;
+        const inMain = (anchor && main.contains(anchor)) ||
+                       (focus && main.contains(focus));
+        if (!inMain) return false;
+
+        const inFooter = footer && ((anchor && footer.contains(anchor)) ||
+                                    (focus && footer.contains(focus)));
+        return !inFooter;
+      }
+
       // BRUTAL force focus with WebKit workaround
       function brutalFocus() {
         if (!enabled) return;
         if (hasBlockingModal()) return;
         if (isOnOtherInput()) return;
         if (Date.now() < wheelPauseUntil) return;
+        if (mouseDownInMain && !mouseDownInFooter) return;
+        if (modifierHeld) return;
+        if (!pausedByModifier && hasActiveMainSelection()) return;
 
         const input = getInput();
         if (!input) return;
@@ -564,6 +647,10 @@ void WebEnginePage::injectInputFocusKeeper() {
 
         // Use WebKit workaround
         webkitFocusFix(input);
+        if (pausedByModifier) {
+          pausedByModifier = false;
+          showFocusToast('Focus restored', 'resume');
+        }
       }
 
       // Aggressive loop - 50ms interval (balanced between responsiveness and not blocking paste)
@@ -610,12 +697,16 @@ void WebEnginePage::injectInputFocusKeeper() {
 
       // Prevent mousedown from stealing focus in main area
       document.addEventListener('mousedown', (e) => {
+        const main = document.querySelector('#main');
+        const footer = document.querySelector('#main footer');
+        mouseDownInMain = !!(main && main.contains(e.target));
+        mouseDownInFooter = !!(footer && footer.contains(e.target));
+
         if (hasBlockingModal()) return;
 
         const input = getInput();
         if (!input) return;
 
-        const main = document.querySelector('#main');
         if (!main || !main.contains(e.target)) return;
 
         // If clicking on non-interactive element in chat area, prevent focus steal
@@ -653,11 +744,21 @@ void WebEnginePage::injectInputFocusKeeper() {
       }, true);
 
       // After any mouseup
-      document.addEventListener('mouseup', () => {
+      document.addEventListener('mouseup', (e) => {
+        mouseDownInMain = false;
+        mouseDownInFooter = false;
+        setModifierHeld(eventHasModifier(e));
         if (hasBlockingModal()) return;
         setTimeout(brutalFocus, 0);
         setTimeout(brutalFocus, 50);
       }, true);
+
+      window.addEventListener('blur', () => {
+        mouseDownInMain = false;
+        mouseDownInFooter = false;
+        modifierHeld = false;
+        pausedByModifier = false;
+      });
 
       // On window/visibility focus
       window.addEventListener('focus', () => {
@@ -688,9 +789,14 @@ void WebEnginePage::injectInputFocusKeeper() {
 
       // Keyboard shortcut to force focus (Escape key when not in modal)
       document.addEventListener('keydown', (e) => {
+        if (eventHasModifier(e)) setModifierHeld(true);
         if (e.key === 'Escape' && !hasBlockingModal()) {
           setTimeout(brutalFocus, 0);
         }
+      }, true);
+
+      document.addEventListener('keyup', (e) => {
+        setModifierHeld(eventHasModifier(e));
       }, true);
 
       // IMPORTANT: Pause focus keeper on paste to allow image modal to appear
@@ -748,6 +854,7 @@ void WebEnginePage::injectInputFocusKeeper() {
           input: getInput(),
           modal: hasBlockingModal(),
           otherInput: isOnOtherInput(),
+          modifierHeld,
           active: document.activeElement,
           activeTag: document.activeElement?.tagName,
           activeTestId: document.activeElement?.getAttribute('data-testid')
