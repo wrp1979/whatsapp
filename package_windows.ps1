@@ -53,11 +53,12 @@ if (-not $SkipDeploy) {
     & $windeployqt.Source --release --no-translations (Join-Path $DeployDir "whatsie.exe")
 }
 
-$versionLine = Select-String -Path (Join-Path $root "src\\WhatsApp.pro") -Pattern "^\\s*VERSION\\s*="
+$proPath = Join-Path $root "src\\WhatsApp.pro"
+$versionLine = Get-Content $proPath | Where-Object { $_ -match "^\\s*VERSION\\s*=" } | Select-Object -First 1
 if (-not $versionLine) {
     throw "VERSION not found in src/WhatsApp.pro"
 }
-$version = ($versionLine.Line -split "=")[1].Trim()
+$version = ($versionLine -split "=")[1].Trim()
 
 $buildNum = "0"
 $buildNumFile = Join-Path $root "src\\BUILD_NUMBER"
