@@ -17,6 +17,6 @@ if (-not $qmake) {
 }
 
 Push-Location $buildPath
-& $qmake.Source (Join-Path $root "src\\WhatsApp.pro") "CONFIG+=$Config" "QMAKE_CXXFLAGS+=-Zc:__cplusplus" "QMAKE_CXXFLAGS_RELEASE+=-Zc:__cplusplus"
+& $qmake.Source (Join-Path $root "src\\WhatsApp.pro") "CONFIG+=$Config" "QMAKE_CXXFLAGS+=-Zc:__cplusplus" "QMAKE_CXXFLAGS_RELEASE+=-Zc:__cplusplus" "QMAKE_CXXFLAGS+=-permissive-" "QMAKE_CXXFLAGS_RELEASE+=-permissive-"
 & nmake
 Pop-Location
