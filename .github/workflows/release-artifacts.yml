@@ -100,7 +100,7 @@ jobs:
         with:
           version: ${{ env.QT_VERSION }}
           arch: win64_msvc2019_64
-          modules: qtwebengine qtpositioning
+          modules: qtwebengine qtpositioning qtwebchannel
           cache: true
 
       - name: Install NSIS
