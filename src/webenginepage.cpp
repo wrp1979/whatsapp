@@ -588,7 +588,7 @@ void WebEnginePage::injectInputFocusKeeper() {
         modifierHeld = next;
         if (modifierHeld) {
           pausedByModifier = true;
-          showFocusToast('Focus paused (hold Ctrl/Alt/Shift)', 'pause');
+          showFocusToast('Focus paused (hold Ctrl)', 'pause');
         }
         if (!modifierHeld) {
           setTimeout(brutalFocus, 0);
@@ -599,12 +599,9 @@ void WebEnginePage::injectInputFocusKeeper() {
       function eventHasModifier(e) {
         if (!e) return modifierHeld;
         if (e.getModifierState) {
-          return e.getModifierState('Alt') ||
-                 e.getModifierState('Control') ||
-                 e.getModifierState('Shift') ||
-                 e.getModifierState('Meta');
+          return e.getModifierState('Control');
         }
-        return !!(e.altKey || e.ctrlKey || e.shiftKey || e.metaKey);
+        return !!e.ctrlKey;
       }
 
       function hasActiveMainSelection() {
