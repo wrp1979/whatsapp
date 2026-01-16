@@ -99,7 +99,7 @@ jobs:
         uses: jurplel/install-qt-action@v3
         with:
           version: ${{ env.QT_VERSION }}
-          arch: win64_msvc2022_64
+          arch: win64_msvc2019_64
           modules: qtwebengine qtpositioning
           cache: true
 

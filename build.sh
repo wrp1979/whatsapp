@@ -226,7 +226,15 @@ do_run() {
 
 show_version() {
     if [[ -x "$BUILD_DIR/whatsie" ]]; then
-        "$BUILD_DIR/whatsie" --build-info
+        if [[ -z "${DISPLAY:-}" && -z "${WAYLAND_DISPLAY:-}" ]]; then
+            if ! QT_QPA_PLATFORM=offscreen "$BUILD_DIR/whatsie" --build-info; then
+                log_warn "Build info skipped (headless environment)."
+            fi
+        else
+            if ! "$BUILD_DIR/whatsie" --build-info; then
+                log_warn "Build info failed."
+            fi
+        fi
     else
         log_error "Binary not found"
     fi
