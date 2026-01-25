@@ -967,7 +967,7 @@ void MainWindow::setNotificationPresenter(QWebEngineProfile *profile) {
     m_webengine_notifier_popup->deleteLater();
   }
 
-  m_webengine_notifier_popup = new NotificationPopup(m_webEngine);
+  m_webengine_notifier_popup = new NotificationPopup(m_webEngine, false);
 
   connect(m_webengine_notifier_popup, &NotificationPopup::notification_clicked,
           this, [this]() { notificationClicked(); });
@@ -1065,6 +1065,7 @@ void MainWindow::handleWebViewTitleChanged(const QString &title) {
     int unreadMessageCount = unreadMessageCountStr.toInt();
 
     if (unreadMessageCount > 0) {
+      m_lastUnreadMessageCount = unreadMessageCount;
       m_restoreAction->setText(
           tr("Restore") + " | " + unreadMessageCountStr + " " +
           (unreadMessageCount > 1 ? tr("messages") : tr("message")));
@@ -1078,6 +1079,13 @@ void MainWindow::handleWebViewTitleChanged(const QString &title) {
     }
   }
 
+  const bool isMinimized =
+      windowState().testFlag(Qt::WindowMinimized) || !isVisible();
+  if (m_lastUnreadMessageCount > 0 && isMinimized) {
+    return;
+  }
+
+  m_lastUnreadMessageCount = 0;
   m_restoreAction->setText(tr("&Restore"));
   if (m_systemTrayIcon) {
     m_systemTrayIcon->setIcon(m_trayIconNormal);

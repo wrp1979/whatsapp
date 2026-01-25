@@ -60,13 +60,14 @@ class NotificationPopup : public QWidget {
   static constexpr int MARGIN = 16;
 
 public:
-  NotificationPopup(QWidget *parent) : QWidget(parent) {
+  explicit NotificationPopup(QWidget *parent, bool deleteOnClose = true)
+      : QWidget(parent) {
     // Window sem borda, sempre no topo, transparente
     setWindowFlags(Qt::FramelessWindowHint | Qt::WindowStaysOnTopHint |
                    Qt::Tool | Qt::WindowDoesNotAcceptFocus);
     setAttribute(Qt::WA_TranslucentBackground);
     setAttribute(Qt::WA_ShowWithoutActivating);
-    setAttribute(Qt::WA_DeleteOnClose);
+    setAttribute(Qt::WA_DeleteOnClose, deleteOnClose);
 
     setFixedSize(POPUP_WIDTH + SHADOW_RADIUS * 2,
                  POPUP_HEIGHT + SHADOW_RADIUS * 2);
