@@ -1,3 +1,68 @@
+## 4.16.3 (build 62) - 2026-01-25
+
+#### 🎁 Feature
+* feat(focus): add Ctrl double-tap toggle and switch modifier to Alt
+* feat(focus): add modifier key pause and toast notifications
+* feat: rewrite focus keeper v4 with brutal mode and WebKit fix
+* feat: add close button to notification popup
+* feat: redesign notification popup with modern UI
+* feat: display build number in version info and window title
+* feat: add build script with auto-incrementing build number
+* feat: add input focus keeper to maintain message field focus
+* feat: add system theme option that follows OS theme
+
+#### 🐞 Bug Fixes
+* fix(tray): persist unread count badge when window is minimized
+* fix: make caps-lock check portable
+* fix(focus): simplify modifier detection to Ctrl-only
+* fix(focus): preserve text selection on window activation
+* fix(focus): improve overlay detection and prevent interference with paste/scroll
+* fix(notifications): use QPointer and fix typos in notification presenter
+* fix: force recompilation of main.o and mainwindow.o on build number increment
+
+#### 🧹 Refactor
+* refactor(title): simplify unread badge logic and fix tray icon click handling
+* refactor: rewrite input focus keeper with aggressive mode
+
+#### 📚 Docs
+* docs: update changelog for builds 45-61
+* docs: update changelog for builds 43-44
+* docs: add AGENTS.md configuration
+* docs: add personal fork notice and input focus fix goal to README
+* docs: update build instructions to use build.sh script
+* docs: add prominent warning about personal fork and input focus fix goal
+* docs: improve build instructions and add troubleshooting tips
+* docs: add AI agent instruction files
+* docs: document fork improvements and Qt6 migration
+
+#### 🛠 Build/CI
+* ci: pass version to Windows packaging
+* build: parse VERSION from pro content
+* build: make Windows version parsing robust
+* build: fix Windows packaging flags
+* build: add Windows system libs
+* build: only link X11 on Linux
+* build: add MSVC permissive flag
+* build: pass MSVC __cplusplus flag to qmake
+* build: force MSVC __cplusplus flag
+* ci: add Qt webchannel module on Windows
+* ci: fix release workflow stability
+* ci: automate multi-platform releases
+
+#### 🚧 Chores
+* chore: bump build number to 61
+* chore: bump build number to 44
+* chore: bump build number to 30
+* chore: bump build number to 29
+* chore: bump build number to 24
+* chore: bump build number to 19
+* chore: remove AGENT.md from repo and update gitignore
+* chore: ignore AI agent config files (AGENTS.md, GEMINI.md)
+* chore: bump build number to 16
+* chore: bump build number to 11
+* chore: bump build number to 9
+
+
 ## 4.16.3 (build 61) - 2026-01-25
 
 #### 🎁 Feature
