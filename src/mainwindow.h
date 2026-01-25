@@ -119,6 +119,7 @@ private:
   Lock *m_lockWidget = nullptr;
   AutoLockEventFilter *m_autoLockEventFilter = nullptr;
   Qt::WindowStates windowStateBeforeFullScreen;
+  bool m_forceQuit = false;
 
   QString userDesktopEnvironment = Utils::detectDesktopEnvironment();
 

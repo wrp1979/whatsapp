@@ -510,6 +510,12 @@ void MainWindow::closeEvent(QCloseEvent *event) {
   QTimer::singleShot(500, m_settingsWidget,
                      [=]() { m_settingsWidget->refresh(); });
 
+  if (m_forceQuit) {
+    event->accept();
+    QMainWindow::closeEvent(event);
+    return;
+  }
+
   if (QSystemTrayIcon::isSystemTrayAvailable() &&
       SettingsManager::instance()
               .settings()
@@ -651,6 +657,10 @@ void MainWindow::createActions() {
 }
 
 void MainWindow::quitApp() {
+  if (m_forceQuit) {
+    return;
+  }
+  m_forceQuit = true;
   SettingsManager::instance().settings().setValue("geometry", saveGeometry());
   getPageTheme();
   QTimer::singleShot(500, this, [=]() {
