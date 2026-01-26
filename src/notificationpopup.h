@@ -328,8 +328,6 @@ public:
 
     notification->show();
 
-    connect(notification.get(), &QWebEngineNotification::closed, this,
-            &NotificationPopup::onClosed);
 
     m_elapsed = 0;
     m_progressBar->setValue(100);
