@@ -49,6 +49,7 @@ class NotificationPopup : public QWidget {
   int m_duration = 9000;
   int m_elapsed = 0;
   bool m_hovered = false;
+  bool m_mousePressed = false;
   NotificationPosition m_position = NotificationPosition::TopRight;
 
   // Constantes de design
@@ -64,7 +65,7 @@ public:
       : QWidget(parent) {
     // Window sem borda, sempre no topo, transparente
     setWindowFlags(Qt::FramelessWindowHint | Qt::WindowStaysOnTopHint |
-                   Qt::Tool | Qt::WindowDoesNotAcceptFocus);
+                   Qt::ToolTip | Qt::WindowDoesNotAcceptFocus);
     setAttribute(Qt::WA_TranslucentBackground);
     setAttribute(Qt::WA_ShowWithoutActivating);
     setAttribute(Qt::WA_DeleteOnClose, deleteOnClose);
@@ -280,9 +281,20 @@ protected:
     update();
   }
 
+  void mousePressEvent(QMouseEvent *event) override {
+    if (event->button() == Qt::LeftButton) {
+      m_mousePressed = rect().contains(event->pos());
+    }
+    QWidget::mousePressEvent(event);
+  }
+
   void mouseReleaseEvent(QMouseEvent *event) override {
     QWidget::mouseReleaseEvent(event);
-    if (event->button() == Qt::LeftButton) {
+    const bool shouldHandleClick =
+        event->button() == Qt::LeftButton && m_mousePressed &&
+        rect().contains(event->pos());
+    m_mousePressed = false;
+    if (shouldHandleClick) {
       emit notification_clicked();
       if (notification)
         notification->click();
