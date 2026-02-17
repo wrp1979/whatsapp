@@ -1060,6 +1060,87 @@ background:transparent;
          </layout>
         </widget>
        </item>
+       <item>
+        <widget class="QGroupBox" name="groupBoxTranscription">
+         <property name="title">
+          <string>Audio Transcription (Whisper — local GPU)</string>
+         </property>
+         <layout class="QVBoxLayout" name="verticalLayoutTranscription">
+          <item>
+           <layout class="QHBoxLayout" name="hLayoutWhisperModel">
+            <item>
+             <widget class="QLabel" name="labelWhisperModel">
+              <property name="text">
+               <string>Model file (.bin):</string>
+              </property>
+             </widget>
+            </item>
+            <item>
+             <widget class="QLineEdit" name="whisperModelPathEdit">
+              <property name="placeholderText">
+               <string>/home/user/.local/share/whatsie/models/ggml-large-v3-turbo.bin</string>
+              </property>
+              <property name="toolTip">
+               <string>Path to a GGML Whisper model file. Download from https://huggingface.co/ggerganov/whisper.cpp</string>
+              </property>
+             </widget>
+            </item>
+            <item>
+             <widget class="QPushButton" name="whisperModelBrowseBtn">
+              <property name="text">
+               <string>Browse…</string>
+              </property>
+              <property name="maximumWidth">
+               <number>80</number>
+              </property>
+             </widget>
+            </item>
+           </layout>
+          </item>
+          <item>
+           <layout class="QHBoxLayout" name="hLayoutWhisperLang">
+            <item>
+             <widget class="QLabel" name="labelWhisperLang">
+              <property name="text">
+               <string>Language:</string>
+              </property>
+             </widget>
+            </item>
+            <item>
+             <widget class="QLineEdit" name="whisperLangEdit">
+              <property name="text">
+               <string>auto</string>
+              </property>
+              <property name="maximumWidth">
+               <number>80</number>
+              </property>
+              <property name="toolTip">
+               <string>Language code (e.g. pt, en, es) or "auto" for automatic detection.</string>
+              </property>
+             </widget>
+            </item>
+            <item>
+             <spacer name="spacerWhisperLang">
+              <property name="orientation">
+               <enum>Qt::Horizontal</enum>
+              </property>
+             </spacer>
+            </item>
+           </layout>
+          </item>
+          <item>
+           <widget class="QLabel" name="labelWhisperHint">
+            <property name="text">
+             <string>Click 📝 on any voice message to transcribe (runs locally on your GPU, no cloud). Download: huggingface.co/ggerganov/whisper.cpp</string>
+            </property>
+            <property name="wordWrap">
+             <bool>true</bool>
+            </property>
+           </widget>
+          </item>
+         </layout>
+        </widget>
+       </item>
       </layout>
      </widget>
     </widget>

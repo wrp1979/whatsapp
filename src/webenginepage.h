@@ -8,15 +8,19 @@
 #include <QImageReader>
 #include <QMessageBox>
 #include <QStyle>
+#include <QWebChannel>
 #include <QWebEngineCertificateError>
 #include <QWebEngineFullScreenRequest>
 #include <QWebEngineNotification>
 #include <QWebEnginePage>
 #include <QWebEngineProfile>
 #include <QWebEngineRegisterProtocolHandlerRequest>
+#include <QWebEngineScript>
 #include <QWebEngineSettings>
 
+#include "audiotranscriber.h"
 #include "settingsmanager.h"
+#include "transcriberbridge.h"
 
 #include "ui_certificateerrordialog.h"
 #include "ui_passworddialog.h"
@@ -65,6 +69,15 @@ private slots:
   void injectFullWidthJavaScript();
   void injectNewChatJavaScript();
   void injectInputFocusKeeper();
+  void injectVisibilityOverride();
+  void injectAudioTranscriber();
+
+private:
+  void setupWebChannel(QWebEngineProfile *profile);
+
+  AudioTranscriber *m_transcriber = nullptr;
+  TranscriberBridge *m_bridge = nullptr;
+  QWebChannel *m_channel = nullptr;
 };
 
 #endif // WEBENGINEPAGE_H

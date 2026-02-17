@@ -1,8 +1,10 @@
 #include "settingswidget.h"
 #include "ui_settingswidget.h"
 
+#include "audiotranscriber.h"
 #include "mainwindow.h"
 #include <QDateTime>
+#include <QFileDialog>
 #include <QMessageBox>
 #include <QStyle>
 #include <QProcess>
@@ -156,6 +158,38 @@ SettingsWidget::SettingsWidget(QWidget *parent, int screenNumber,
                                  .value("asdfg")
                                  .toString()
                                  .toUtf8()));
+
+  // Whisper local model settings
+  ui->whisperModelPathEdit->setText(
+      SettingsManager::instance()
+          .settings()
+          .value("whisperModelPath", AudioTranscriber::defaultModelPath())
+          .toString());
+  connect(ui->whisperModelPathEdit, &QLineEdit::editingFinished, this, [this]() {
+    SettingsManager::instance().settings().setValue(
+        "whisperModelPath", ui->whisperModelPathEdit->text().trimmed());
+  });
+
+  connect(ui->whisperModelBrowseBtn, &QPushButton::clicked, this, [this]() {
+    const QString path = QFileDialog::getOpenFileName(
+        this, tr("Select Whisper GGML Model"),
+        QDir::homePath(),
+        tr("GGML model files (*.bin);;All files (*)"));
+    if (!path.isEmpty()) {
+      ui->whisperModelPathEdit->setText(path);
+      SettingsManager::instance().settings().setValue("whisperModelPath", path);
+    }
+  });
+
+  ui->whisperLangEdit->setText(
+      SettingsManager::instance()
+          .settings()
+          .value("whisperLanguage", "auto")
+          .toString());
+  connect(ui->whisperLangEdit, &QLineEdit::editingFinished, this, [this]() {
+    SettingsManager::instance().settings().setValue(
+        "whisperLanguage", ui->whisperLangEdit->text().trimmed());
+  });
 
   applyThemeQuirks();
 

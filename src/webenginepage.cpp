@@ -1,11 +1,95 @@
 #include "webenginepage.h"
 
+#include <QDateTime>
+#include <QDir>
+#include <QFile>
+#include <QIODevice>
+#include <QMetaEnum>
+#include <QStandardPaths>
+#include <QTextStream>
+#include <QWebEngineScript>
+#include <QWebEngineScriptCollection>
+
+namespace {
+QString certErrorTypeToString(QWebEngineCertificateError::Type type) {
+  const QMetaEnum metaEnum =
+      QMetaEnum::fromType<QWebEngineCertificateError::Type>();
+  const char *key = metaEnum.valueToKey(type);
+  if (key) {
+    return QString::fromLatin1(key);
+  }
+  return QString::number(static_cast<int>(type));
+}
+
+QString certLogPath() {
+  const QString dirPath =
+      QStandardPaths::writableLocation(QStandardPaths::AppLocalDataLocation);
+  if (dirPath.isEmpty()) {
+    return QString();
+  }
+  QDir dir(dirPath);
+  if (!dir.exists()) {
+    dir.mkpath(".");
+  }
+  return dir.filePath("cert_errors.log");
+}
+
+QString summarizeCertChain(const QList<QSslCertificate> &chain) {
+  QStringList parts;
+  parts.reserve(chain.size());
+  for (const QSslCertificate &cert : chain) {
+    const QStringList cnList =
+        cert.subjectInfo(QSslCertificate::CommonName);
+    const QString cn = cnList.isEmpty() ? QString("unknown") : cnList.first();
+    parts.append(cn);
+  }
+  return parts.join(" -> ");
+}
+
+void logCertificateError(const QWebEngineCertificateError &error,
+                         const QString &action) {
+  const QString url = error.url().toString();
+  const QString host = error.url().host();
+  const QString type = certErrorTypeToString(error.type());
+  const QString desc = error.description();
+  const QString chainSummary = summarizeCertChain(error.certificateChain());
+  const QString message = QString("[%1] cert_error action=%2 url=%3 host=%4 "
+                                  "type=%5 overridable=%6 desc=%7 chain=%8")
+                              .arg(QDateTime::currentDateTime().toString(
+                                   Qt::ISODate))
+                              .arg(action, url, host, type)
+                              .arg(error.isOverridable())
+                              .arg(desc, chainSummary);
+
+  qWarning().noquote() << message;
+
+  const QString path = certLogPath();
+  if (path.isEmpty()) {
+    return;
+  }
+  QFile file(path);
+  if (!file.open(QIODevice::WriteOnly | QIODevice::Append | QIODevice::Text)) {
+    return;
+  }
+  QTextStream out(&file);
+  out << message << "\n";
+}
+} // namespace
+
 QWebEngineView *WebEnginePage::view() const {
     return qobject_cast<QWebEngineView *>(parent());
 }
 
 WebEnginePage::WebEnginePage(QWebEngineProfile *profile, QObject *parent)
     : QWebEnginePage(profile, parent) {
+
+  // Set up audio transcription via QWebChannel
+  m_transcriber = new AudioTranscriber(this);
+  m_bridge = new TranscriberBridge(m_transcriber, this);
+  m_channel = new QWebChannel(this);
+  m_channel->registerObject(QStringLiteral("transcriber"), m_bridge);
+  this->setWebChannel(m_channel);
+  setupWebChannel(profile);
 
   auto userAgent = profile->httpUserAgent();
   qDebug() << "WebEnginePage::Profile::UserAgent" << userAgent;
@@ -31,31 +115,16 @@ WebEnginePage::WebEnginePage(QWebEngineProfile *profile, QObject *parent)
           &WebEnginePage::handleSelectClientCertificate);
 #endif
 
-  connect(this, &QWebEnginePage::certificateError, this, [this](QWebEngineCertificateError error) {
-      QWidget *mainWindow = view()->window();
-      if (error.isOverridable()) {
-        QDialog dialog(mainWindow);
-        dialog.setModal(true);
-        dialog.setWindowFlags(dialog.windowFlags() &
-                              ~Qt::WindowContextHelpButtonHint);
-        Ui::CertificateErrorDialog certificateDialog;
-        certificateDialog.setupUi(&dialog);
-        certificateDialog.m_iconLabel->setText(QString());
-        QIcon icon(mainWindow->style()->standardIcon(QStyle::SP_MessageBoxWarning,
-                                                     nullptr, mainWindow));
-        certificateDialog.m_iconLabel->setPixmap(icon.pixmap(32, 32));
-        certificateDialog.m_errorLabel->setText(error.description());
-        dialog.setWindowTitle(tr("Certificate Error"));
-        if (dialog.exec() == QDialog::Accepted) {
-            error.acceptCertificate();
-            return;
-        }
-      }
-
-      QMessageBox::critical(mainWindow, tr("Certificate Error"),
-                            error.description());
-      error.rejectCertificate();
-  });
+  connect(this, &QWebEnginePage::certificateError, this,
+          [this](QWebEngineCertificateError error) {
+            if (error.isOverridable()) {
+              logCertificateError(error, "auto-accept");
+              error.acceptCertificate();
+            } else {
+              logCertificateError(error, "reject-not-overridable");
+              error.rejectCertificate();
+            }
+          });
 }
 
 bool WebEnginePage::acceptNavigationRequest(const QUrl &url,
@@ -176,7 +245,9 @@ void WebEnginePage::handleLoadFinished(bool ok) {
     injectFullWidthJavaScript();
     injectClassChangeObserver();
     injectNewChatJavaScript();
+    injectVisibilityOverride();
     injectInputFocusKeeper();
+    injectAudioTranscriber();
   }
 }
 
@@ -322,10 +393,10 @@ void WebEnginePage::handleSelectClientCertificate(
 void WebEnginePage::javaScriptConsoleMessage(
     WebEnginePage::JavaScriptConsoleMessageLevel level, const QString &message,
     int lineId, const QString &sourceId) {
-  Q_UNUSED(level);
-  Q_UNUSED(message);
   Q_UNUSED(lineId);
   Q_UNUSED(sourceId);
+  if (message.startsWith("[Whatsie]"))
+    qInfo().noquote() << message;
 }
 
 void WebEnginePage::injectPreventScrollWheelZoomHelper() {
@@ -421,6 +492,67 @@ void WebEnginePage::injectNewChatJavaScript() {
                 {
                     return (openNewChatWhatsie != 'undefined');
                 })";
+  this->runJavaScript(js);
+}
+
+void WebEnginePage::injectVisibilityOverride() {
+  QString js = R"(
+    (function() {
+      if (window._whatsieVisibilityOverride) return;
+      window._whatsieVisibilityOverride = true;
+
+      function isInactive() {
+        return window._whatsieWindowActive === false;
+      }
+
+      const docProto = Document.prototype;
+      const hiddenDesc = Object.getOwnPropertyDescriptor(docProto, 'hidden');
+      const visibilityDesc = Object.getOwnPropertyDescriptor(docProto, 'visibilityState');
+      const origHidden =
+        hiddenDesc && hiddenDesc.get ? hiddenDesc.get.bind(document) : () => false;
+      const origVisibility =
+        visibilityDesc && visibilityDesc.get ? visibilityDesc.get.bind(document) : () => 'visible';
+
+      function getHidden() {
+        if (isInactive()) return true;
+        return origHidden();
+      }
+
+      function getVisibility() {
+        if (isInactive()) return 'hidden';
+        return origVisibility();
+      }
+
+      try {
+        Object.defineProperty(document, 'hidden', {
+          configurable: true,
+          get: getHidden
+        });
+      } catch (e) {}
+
+      try {
+        Object.defineProperty(document, 'visibilityState', {
+          configurable: true,
+          get: getVisibility
+        });
+      } catch (e) {}
+
+      const origHasFocus = document.hasFocus ? document.hasFocus.bind(document) : null;
+      document.hasFocus = function() {
+        if (isInactive()) return false;
+        return origHasFocus ? origHasFocus() : true;
+      };
+
+      window._whatsieUpdateVisibility = function() {
+        document.dispatchEvent(new Event('visibilitychange'));
+        if (isInactive()) {
+          window.dispatchEvent(new Event('blur'));
+        } else {
+          window.dispatchEvent(new Event('focus'));
+        }
+      };
+    })();
+  )";
   this->runJavaScript(js);
 }
 
@@ -666,6 +798,13 @@ void WebEnginePage::injectInputFocusKeeper() {
         return !!e.altKey;
       }
 
+      function isWindowActive() {
+        if (typeof window._whatsieWindowActive === 'boolean') {
+          return window._whatsieWindowActive;
+        }
+        return true;
+      }
+
       function hasActiveMainSelection() {
         const sel = window.getSelection ? window.getSelection() : null;
         if (!sel || sel.rangeCount === 0 || sel.isCollapsed) return false;
@@ -687,6 +826,9 @@ void WebEnginePage::injectInputFocusKeeper() {
 
       // BRUTAL force focus with WebKit workaround
       function brutalFocus() {
+        if (!isWindowActive()) return;
+        if (document.hidden) return;
+        if (typeof document.hasFocus === 'function' && !document.hasFocus()) return;
         if (!enabled) return;
         if (hasBlockingModal()) return;
         if (isOnOtherInput()) return;
@@ -939,6 +1081,444 @@ void WebEnginePage::injectInputFocusKeeper() {
       };
 
       console.log('[Whatsie] Focus keeper v4 - BRUTAL mode with WebKit fix');
+    })();
+  )";
+  this->runJavaScript(js);
+}
+
+void WebEnginePage::setupWebChannel(QWebEngineProfile *profile) {
+  // Inject qwebchannel.js from Qt resources so JS can call
+  // new QWebChannel(qt.webChannelTransport, ...).
+  // Qt ships this file as :/qtwebchannel/qwebchannel.js when linking
+  // against the webchannel module.
+  const QString scriptName = QStringLiteral("whatsie_qwebchannel_api");
+  // Avoid inserting twice if multiple pages share the same profile
+  if (!profile->scripts()->find(scriptName).isEmpty())
+    return;
+
+  QFile f(QStringLiteral(":/qtwebchannel/qwebchannel.js"));
+  if (!f.open(QIODevice::ReadOnly)) {
+    qWarning() << "[Whatsie] Failed to load :/qtwebchannel/qwebchannel.js"
+               << "- audio transcription bridge will not work";
+    return;
+  }
+
+  QWebEngineScript script;
+  script.setName(scriptName);
+  script.setSourceCode(QString::fromUtf8(f.readAll()));
+  script.setInjectionPoint(QWebEngineScript::DocumentCreation);
+  script.setWorldId(QWebEngineScript::MainWorld);
+  script.setRunsOnSubFrames(false);
+  profile->scripts()->insert(script);
+
+  // Inject early audio interceptor at DocumentCreation – runs before WhatsApp's
+  // own JS so we can patch URL.createObjectURL, Audio constructor, etc.
+  const QString interceptName = QStringLiteral("whatsie_audio_intercept");
+  if (!profile->scripts()->find(interceptName).isEmpty())
+    return;
+
+  const QString interceptSrc = QStringLiteral(R"JS(
+(function() {
+  if (window._whatsieEarlyIntercept) return;
+  window._whatsieEarlyIntercept = true;
+  window._whatsieCaptured = [];  // [{buf, mime, t}]
+  window._whatsieLastClick = {el: null, t: 0};
+
+  // Record last clicked element (capture phase = fires before WhatsApp handlers)
+  document.addEventListener('click', function(e) {
+    window._whatsieLastClick = {el: e.target, t: Date.now()};
+  }, true);
+
+  function saveBuf(buf, mime) {
+    try {
+      var copy = buf.slice ? buf.slice(0) : buf;
+      window._whatsieCaptured.push({buf: copy, mime: mime || 'audio/ogg', t: Date.now()});
+      // Keep at most 10 recent buffers
+      if (window._whatsieCaptured.length > 10)
+        window._whatsieCaptured.shift();
+    } catch(e) {}
+  }
+
+  // 1. Intercept URL.createObjectURL (captures blob URL creation)
+  var origCOURL = URL.createObjectURL;
+  URL.createObjectURL = function(obj) {
+    var url = origCOURL.call(URL, obj);
+    if (obj && obj instanceof Blob && obj.type && obj.type.indexOf('audio') >= 0) {
+      (function(b, u) {
+        b.arrayBuffer().then(function(ab) {
+          saveBuf(ab, b.type);
+          window._whatsieLastBlobUrl = u;
+        }).catch(function() {});
+      })(obj, url);
+    }
+    return url;
+  };
+
+  // 2. Intercept BaseAudioContext.decodeAudioData
+  var origDecode = BaseAudioContext.prototype.decodeAudioData;
+  BaseAudioContext.prototype.decodeAudioData = function(buf, ok, err) {
+    saveBuf(buf, 'audio/ogg');
+    window._whatsieLastDecodeTime = Date.now();
+    return origDecode.apply(this, arguments);
+  };
+
+  // 3. Intercept Audio constructor (detached audio elements)
+  var OrigAudio = window.Audio;
+  window.Audio = function(src) {
+    var a = src ? new OrigAudio(src) : new OrigAudio();
+    var srcDesc = Object.getOwnPropertyDescriptor(HTMLMediaElement.prototype, 'src');
+    if (srcDesc && srcDesc.set) {
+      Object.defineProperty(a, 'src', {
+        configurable: true,
+        get: srcDesc.get ? srcDesc.get.bind(a) : function() { return ''; },
+        set: function(v) {
+          srcDesc.set.call(a, v);
+          if (v && v.indexOf('blob:') === 0) {
+            window._whatsieLastBlobUrl = v;
+            fetch(v).then(function(r) { return r.arrayBuffer(); })
+              .then(function(ab) { saveBuf(ab, 'audio/ogg'); })
+              .catch(function() {});
+          }
+        }
+      });
+    }
+    return a;
+  };
+})();
+)JS");
+
+  QWebEngineScript iScript;
+  iScript.setName(interceptName);
+  iScript.setSourceCode(interceptSrc);
+  iScript.setInjectionPoint(QWebEngineScript::DocumentCreation);
+  iScript.setWorldId(QWebEngineScript::MainWorld);
+  iScript.setRunsOnSubFrames(false);
+  profile->scripts()->insert(iScript);
+}
+
+void WebEnginePage::injectAudioTranscriber() {
+  QString js = R"(
+    (function() {
+      if (window._whatsieAudioTranscriber) return;
+      window._whatsieAudioTranscriber = true;
+
+      var bridge = null;
+      var LOG = function(msg) { console.log('[Whatsie] ' + msg); };
+
+      // -----------------------------------------------------------------
+      // QWebChannel init
+      // -----------------------------------------------------------------
+      function initChannel() {
+        if (typeof QWebChannel === 'undefined' ||
+            typeof qt === 'undefined' || !qt.webChannelTransport) {
+          setTimeout(initChannel, 200); return;
+        }
+        new QWebChannel(qt.webChannelTransport, function(channel) {
+          bridge = channel.objects.transcriber;
+          bridge.transcriptionReady.connect(function(msgId, text) {
+            showTranscription(msgId, text, false);
+          });
+          bridge.transcriptionError.connect(function(msgId, errText) {
+            showTranscription(msgId, '\u26a0 ' + errText, true);
+          });
+          LOG('Bridge ready');
+        });
+      }
+
+      // -----------------------------------------------------------------
+      // Saved audio buffers: key = msgId, value = {buf, mime}
+      // -----------------------------------------------------------------
+      var savedBuffers = {};
+      var lastMsgId    = null;
+
+      // -----------------------------------------------------------------
+      // Walk up from el to find the WA message container ([data-id] div)
+      // -----------------------------------------------------------------
+      function findMsgContainer(el) {
+        var cur = el;
+        // Pass 1: data-id attribute or role=row (WhatsApp message markers)
+        for (var i = 0; i < 30 && cur && cur !== document.body; i++) {
+          if (cur.dataset && cur.dataset.id) return cur;
+          if (cur.getAttribute && cur.getAttribute('role') === 'row') return cur;
+          cur = cur.parentElement;
+        }
+        // Pass 2: tabindex=-1 div inside #main
+        cur = el;
+        for (var j = 0; j < 30 && cur && cur !== document.body; j++) {
+          if (cur.getAttribute && cur.getAttribute('tabindex') === '-1' &&
+              cur.tagName === 'DIV' && cur.closest && cur.closest('#main'))
+            return cur;
+          cur = cur.parentElement;
+        }
+        // Pass 3: last resort — take the ancestor at depth 8-12 that is a
+        // DIV inside #main.  Not perfect but always finds *something*.
+        cur = el;
+        for (var k = 0; k < 15 && cur && cur !== document.body; k++) {
+          cur = cur.parentElement;
+          if (!cur) break;
+          if (k >= 7 && cur.tagName === 'DIV' &&
+              cur.closest && cur.closest('#main'))
+            return cur;
+        }
+        return null;
+      }
+
+      // -----------------------------------------------------------------
+      // Add a 📝 transcribe button to a message container
+      // -----------------------------------------------------------------
+      var processedContainers = new WeakSet();
+      function addButtonToContainer(container, msgId) {
+        if (processedContainers.has(container)) return;
+        processedContainers.add(container);
+        container.dataset.whatsieId = msgId;
+
+        var btn = document.createElement('button');
+        btn.className = 'whatsie-transcribe-btn';
+        btn.title = 'Transcrever \u00e1udio (Whisper)';
+        btn.textContent = '\uD83D\uDCDD';
+        btn.setAttribute('type', 'button');
+        btn.style.cssText = [
+          'all:initial',
+          'display:inline-flex',
+          'align-items:center',
+          'justify-content:center',
+          'width:28px',
+          'height:28px',
+          'border:none',
+          'border-radius:50%',
+          'background:rgba(0,130,0,0.18)',
+          'cursor:pointer',
+          'font-size:14px',
+          'margin-left:6px',
+          'vertical-align:middle',
+          'flex-shrink:0',
+          'transition:background 0.15s',
+          'font-family:sans-serif',
+          'z-index:9999',
+        ].join(';');
+        btn.onmouseenter = function() { btn.style.background='rgba(0,130,0,0.35)'; };
+        btn.onmouseleave = function() { btn.style.background='rgba(0,130,0,0.18)'; };
+        btn.onclick = function(e) {
+          e.stopPropagation(); e.preventDefault();
+          transcribeById(msgId, btn);
+        };
+        container.appendChild(btn);
+      }
+
+      // -----------------------------------------------------------------
+      // Pull captured buffers from the early DocumentCreation interceptor
+      // (window._whatsieCaptured) and also keep our own decodeAudioData
+      // intercept as a secondary layer.
+      // -----------------------------------------------------------------
+      function pollCaptured() {
+        var caps = window._whatsieCaptured || [];
+        if (caps.length > 0) {
+          var latest = caps[caps.length - 1];
+          var msgId = 'wa_' + Math.random().toString(36).slice(2) + '_' + Date.now();
+          savedBuffers[msgId] = {buf: latest.buf, mime: latest.mime || 'audio/ogg'};
+          lastMsgId = msgId;
+          LOG('Audio pulled from early intercept: ' + Math.round(latest.buf.byteLength / 1024) + ' KB');
+          tryAttachButtonForLastDecode(msgId);
+          // Clear consumed buffers
+          window._whatsieCaptured = [];
+        }
+      }
+      // Poll for new captures every 300ms
+      setInterval(pollCaptured, 300);
+
+      // -----------------------------------------------------------------
+      // After a decode call, look for the message container that was
+      // activated (WhatsApp usually adds a "playing" class or changes
+      // aria-label on the play button)
+      // -----------------------------------------------------------------
+      var lastAriaChangedEl = null;
+      var ariaObserver = new MutationObserver(function(muts) {
+        muts.forEach(function(m) {
+          if (m.type === 'attributes' && m.attributeName === 'aria-label') {
+            lastAriaChangedEl = m.target;
+          }
+        });
+      });
+      ariaObserver.observe(document.body, {
+        attributes: true, subtree: true, attributeFilter: ['aria-label']
+      });
+
+      function tryAttachButtonForLastDecode(msgId) {
+        // --- pick best anchor element (proper cascade) ---
+        var el = null;
+        var lc = window._whatsieLastClick || {el: null, t: 0};
+        if (lc.el && (Date.now() - lc.t) < 3000 &&
+            lc.el !== document.body && lc.el !== document.documentElement) {
+          try { if (lc.el.closest && lc.el.closest('#main')) el = lc.el; } catch(e){}
+        }
+        if (!el && lastAriaChangedEl && lastAriaChangedEl !== document.body) {
+          try {
+            if (lastAriaChangedEl.closest && lastAriaChangedEl.closest('#main'))
+              el = lastAriaChangedEl;
+          } catch(e){}
+        }
+        LOG('tryAttach: el=' + (el ? el.tagName : 'none') +
+            ' click_age=' + (Date.now() - lc.t) + 'ms');
+        if (!el) { LOG('tryAttach: no anchor'); return; }
+
+        // Walk up from el to find the CONTROLS ROW — the first ancestor with
+        // 2+ children that is inside #main.  That is the row that has the
+        // play button, waveform and duration side-by-side.
+        var insertParent = null;
+        var cur = el;
+        for (var k = 0; k < 15 && cur && cur !== document.body; k++) {
+          var p = cur.parentElement;
+          if (!p || p === document.body) break;
+          try {
+            if (p.children.length >= 2 && p.closest && p.closest('#main')) {
+              insertParent = p;
+              break;
+            }
+          } catch(e) {}
+          cur = p;
+        }
+
+        // Container for data-whatsie-id tracking (higher level)
+        var container = findMsgContainer(el);
+        LOG('tryAttach: insertParent=' +
+            (insertParent ? insertParent.tagName+'['+insertParent.children.length+'ch]' : 'null') +
+            ' container=' + (container ? container.tagName : 'null'));
+
+        if (!insertParent && !container) { LOG('tryAttach: nowhere to insert'); return; }
+
+        var tracker = container || insertParent;
+        tracker.dataset.whatsieId = msgId;
+        if (processedContainers.has(tracker)) { LOG('tryAttach: already done'); return; }
+        processedContainers.add(tracker);
+
+        var btn = document.createElement('button');
+        btn.className = 'whatsie-transcribe-btn';
+        btn.title = 'Transcrever \u00e1udio (Whisper)';
+        btn.textContent = '\uD83D\uDCDD';
+        btn.setAttribute('type', 'button');
+        btn.style.cssText = [
+          'all:initial', 'display:inline-flex', 'align-items:center',
+          'justify-content:center', 'width:28px', 'height:28px',
+          'border:none', 'border-radius:50%', 'background:rgba(0,130,0,0.18)',
+          'cursor:pointer', 'font-size:14px', 'margin-left:6px',
+          'vertical-align:middle', 'flex-shrink:0', 'transition:background 0.15s',
+          'font-family:sans-serif', 'z-index:9999',
+        ].join(';');
+        btn.onmouseenter = function() { btn.style.background='rgba(0,130,0,0.35)'; };
+        btn.onmouseleave = function() { btn.style.background='rgba(0,130,0,0.18)'; };
+        btn.onclick = function(e) {
+          e.stopPropagation(); e.preventDefault();
+          transcribeById(msgId, btn);
+        };
+
+        // Insert inline in the controls row (play+waveform+duration row)
+        if (insertParent) {
+          insertParent.appendChild(btn);
+        } else {
+          container.appendChild(btn);
+        }
+      }
+
+      // -----------------------------------------------------------------
+      // Also watch for <audio> elements (fallback for older WA versions
+      // that do use HTML audio)
+      // -----------------------------------------------------------------
+      var processedAudio = new WeakSet();
+      function tryAttachFromAudio(audio) {
+        if (processedAudio.has(audio)) return;
+        var src = audio.src || audio.currentSrc || '';
+        if (!src) {
+          audio.addEventListener('loadstart', function h() {
+            audio.removeEventListener('loadstart', h);
+            tryAttachFromAudio(audio);
+          });
+          return;
+        }
+        if (src.indexOf('blob:') !== 0) return;
+        processedAudio.add(audio);
+
+        var msgId = 'wa_audio_' + Math.random().toString(36).slice(2);
+        // Lazily fetch the blob and save it
+        fetch(src).then(function(r) { return r.arrayBuffer(); }).then(function(buf) {
+          savedBuffers[msgId] = {buf: buf, mime: audio.type || 'audio/ogg'};
+          lastMsgId = msgId;
+          var container = findMsgContainer(audio);
+          if (container) addButtonToContainer(container, msgId);
+        }).catch(function() {});
+      }
+
+      var audioElObserver = new MutationObserver(function(muts) {
+        muts.forEach(function(m) {
+          m.addedNodes && m.addedNodes.forEach && m.addedNodes.forEach(function(n) {
+            if (!n || n.nodeType !== 1) return;
+            if (n.tagName === 'AUDIO') tryAttachFromAudio(n);
+            else if (n.querySelectorAll) n.querySelectorAll('audio').forEach(tryAttachFromAudio);
+          });
+          if (m.type === 'attributes' && m.target && m.target.tagName === 'AUDIO')
+            tryAttachFromAudio(m.target);
+        });
+      });
+      audioElObserver.observe(document.body, {
+        childList: true, subtree: true,
+        attributes: true, attributeFilter: ['src']
+      });
+
+      // -----------------------------------------------------------------
+      // Transcribe by message id (uses saved buffer)
+      // -----------------------------------------------------------------
+      function transcribeById(msgId, btn) {
+        var saved = savedBuffers[msgId] || (lastMsgId && savedBuffers[lastMsgId]);
+        if (!saved) {
+          showTranscription(msgId, '\u26a0 Pressione play primeiro, depois clique \uD83D\uDCDD', true);
+          return;
+        }
+        if (!bridge) {
+          showTranscription(msgId, '\u26a0 Bridge n\u00e3o pronto, aguarde...', true);
+          return;
+        }
+        btn.textContent = '\u23F3'; btn.disabled = true;
+        var u8 = new Uint8Array(saved.buf);
+        var bin = '';
+        for (var i = 0; i < u8.length; i += 8192)
+          bin += String.fromCharCode.apply(null, u8.subarray(i, i + 8192));
+        bridge.requestTranscription(btoa(bin), msgId, saved.mime);
+      }
+
+      // -----------------------------------------------------------------
+      // Show transcription text below the message container
+      // -----------------------------------------------------------------
+      function showTranscription(msgId, text, isError) {
+        var container = document.querySelector('[data-whatsie-id="' + msgId + '"]');
+        // Fallback: if we don't have the exact container, find last one
+        if (!container) {
+          var all = document.querySelectorAll('[data-whatsie-id]');
+          container = all[all.length - 1] || null;
+        }
+        if (!container) { LOG('showTranscription: no container for ' + msgId); return; }
+        var btn = container.querySelector('.whatsie-transcribe-btn');
+        if (btn) { btn.textContent = '\uD83D\uDCDD'; btn.disabled = false; }
+        var div = container.querySelector('.whatsie-transcription');
+        if (!div) {
+          div = document.createElement('div');
+          div.className = 'whatsie-transcription';
+          div.style.cssText = [
+            'margin-top:6px', 'padding:6px 10px', 'border-radius:8px',
+            'font-size:13px', 'line-height:1.4', 'background:rgba(0,0,0,0.07)',
+            'cursor:text', 'user-select:text', '-webkit-user-select:text',
+            'white-space:pre-wrap', 'word-break:break-word', 'display:block',
+          ].join(';');
+          container.appendChild(div);
+        }
+        div.style.color = isError ? '#c00' : 'inherit';
+        div.textContent = text;
+      }
+
+      initChannel();
+      LOG('Audio transcriber v3 active - intercepting decodeAudioData');
+
+      window._whatsieTranscriber = {
+        status: function() { return {bridge: !!bridge, v: 3, buffers: Object.keys(savedBuffers).length, last: lastMsgId}; }
+      };
     })();
   )";
   this->runJavaScript(js);
