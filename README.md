@@ -4,19 +4,52 @@ Feature rich WhatsApp web client based on Qt WebEngine for Linux Desktop
 
 ---
 
-> **⚠️ PERSONAL FORK - INPUT FOCUS FIX**
->
-> This is my personal fork of Whatsie. The main goal is to fix the extremely annoying input focus bug in WhatsApp Web where the message input field constantly loses focus, making it impossible to type properly.
->
-> **The problem:** WhatsApp Web loses focus on the message input field randomly, especially after clicking anywhere in the chat area, closing popups, or switching windows.
->
-> **My solution:** Aggressive JavaScript injection that forces focus back to the input field (see `src/webenginepage.cpp` - Focus Keeper v4).
+> **PERSONAL FORK** — built on top of the original Whatsie to fix daily-use pain points and add features not available anywhere else.
 
 ---
 
 ## Fork Improvements
 
-This fork includes several improvements over the original project:
+This fork adds several features and fixes on top of the original Whatsie project.
+
+### Local Audio Transcription (no API key required)
+
+The killer feature: transcribe WhatsApp voice messages and audio messages **entirely on your machine**, offline, with no external API calls.
+
+- Powered by [whisper.cpp](https://github.com/ggerganov/whisper.cpp) — runs locally using your GPU (CUDA) for fast inference
+- A **📝 button** appears next to every voice message and PTT audio player
+- Click it after pressing play — the audio is captured, decoded, and transcribed in seconds
+- Transcription appears inline below the audio player
+- Works with any language (auto-detection or manual language setting)
+- **No API key. No internet. No cloud.** Fully private.
+
+**How it works (technical):**
+1. JS injection intercepts `decodeAudioData` in WhatsApp Web to capture the raw audio buffer
+2. Buffer is sent to C++ via `QWebChannel` (no file needed)
+3. `libavformat` + `libswresample` decode any audio format → mono f32 PCM at 16 kHz
+4. `whisper_full()` runs on GPU via CUDA with Flash Attention enabled
+5. Transcript is sent back to JS and displayed inline — the whole round-trip is non-blocking
+
+**Setup:**
+1. Download a GGML Whisper model (e.g. `ggml-large-v3-turbo.bin`) from [huggingface.co/ggerganov/whisper.cpp](https://huggingface.co/ggerganov/whisper.cpp)
+2. Place it at `~/.local/share/whatsie/models/` (auto-detected) or set the path in **Settings → Transcription**
+3. Optionally set a language code (`pt`, `en`, `es`, …) or keep `auto` for automatic detection
+
+**Build requirements for this feature:**
+- [whisper.cpp](https://github.com/ggerganov/whisper.cpp) built with `GGML_CUDA=ON` and installed to `/usr/local`
+- FFmpeg dev libraries: `libavformat`, `libavcodec`, `libswresample`, `libavutil`
+
+---
+
+### Input Focus Fix (Focus Keeper v4)
+
+Fixes the extremely annoying WhatsApp Web bug where the message input field constantly loses focus, making it impossible to type properly.
+
+- **The problem:** WhatsApp Web randomly steals focus away from the input field — after clicking in the chat area, closing popups, switching windows, or interacting with any UI element.
+- **The fix:** Aggressive JavaScript injection (`injectInputFocusKeeper` in `src/webenginepage.cpp`) uses a smart polling loop to detect focus loss and restore it immediately, without interfering with intentional clicks on other elements.
+- Debug from DevTools console: `window._whatsieFocusControl.status()`
+
+---
 
 ### Qt6 Migration
 - Full migration from Qt5 to Qt6 WebEngine API
@@ -108,6 +141,12 @@ The source code can be built using the regular Qt application development proced
 	+ webengine (qt6-webengine-dev)
 	+ webenginewidgets
 	+ positioning
+	+ webchannel
+	+ concurrent
+ - **For local audio transcription** (optional but recommended):
+	+ [whisper.cpp](https://github.com/ggerganov/whisper.cpp) built with `GGML_CUDA=ON` and installed (`make install`) — provides `libwhisper.so` and `whisper.h`
+	+ FFmpeg dev libraries: `libavformat-dev libavcodec-dev libswresample-dev libavutil-dev`
+	+ A GGML model file (e.g. `ggml-large-v3-turbo.bin`) placed in `~/.local/share/whatsie/models/`
 	
 ### Build steps
 
