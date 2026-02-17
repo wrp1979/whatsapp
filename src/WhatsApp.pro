@@ -23,7 +23,7 @@ equals(QMAKE_HOST.arch, aarch64) {
 # Uncomment if you need specific linker flags as well
 #QMAKE_LFLAGS += $$QMAKE_LDFLAGS
 
-QT += core gui webenginewidgets positioning
+QT += core gui webenginewidgets positioning webchannel concurrent
 
 CONFIG += c++17
 
@@ -45,6 +45,15 @@ TARGET = whatsie
 TEMPLATE = app
 linux: LIBS += -L/usr/X11/lib -lX11
 win32: LIBS += -luser32 -ladvapi32
+
+# whisper.cpp (local Whisper inference with CUDA)
+INCLUDEPATH += /usr/local/include
+LIBS += -L/usr/local/lib -lwhisper
+QMAKE_RPATHDIR += /usr/local/lib
+
+# FFmpeg / libav for audio decoding (OGG/Opus → PCM f32 16kHz)
+CONFIG += link_pkgconfig
+PKGCONFIG += libavformat libavcodec libswresample libavutil
 
 include(singleapplication/singleapplication.pri)
 DEFINES += QAPPLICATION_CLASS=QApplication
@@ -95,6 +104,7 @@ DEFINES += BUILD_NUM=$$BUILD_NUM
 
 SOURCES += \
         about.cpp \
+        audiotranscriber.cpp \
         automatictheme.cpp \
         dictionaries.cpp \
         downloadmanagerwidget.cpp \
@@ -106,6 +116,7 @@ SOURCES += \
         settingswidget.cpp \
         sunclock.cpp \
         theme.cpp \
+        transcriberbridge.cpp \
         utils.cpp \
         webenginepage.cpp \
         webview.cpp \
@@ -116,6 +127,7 @@ RESOURCES += \
 
 HEADERS += \
     about.h \
+    audiotranscriber.h \
     autolockeventfilter.h \
     automatictheme.h \
     common.h \
@@ -132,6 +144,7 @@ HEADERS += \
     settingswidget.h \
     sunclock.hpp \
     theme.h \
+    transcriberbridge.h \
     utils.h \
     webenginepage.h \
     webview.h \
