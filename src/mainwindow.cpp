@@ -6,6 +6,7 @@
 #include <QScreen>
 #include <QShortcut>
 #include <QStyleHints>
+#include <QTimer>
 #include <QUrlQuery>
 #include <QWebEngineNotification>
 #include <QProcess>
@@ -34,6 +35,33 @@ MainWindow::MainWindow(QWidget *parent)
   tryLock();
   updateWindowTheme();
   initAutoLock();
+
+  auto *activeSyncTimer = new QTimer(this);
+  activeSyncTimer->setInterval(500);
+  connect(activeSyncTimer, &QTimer::timeout, this, [this]() {
+    if (!m_webEngine || !m_webEngine->page()) {
+      return;
+    }
+    const bool windowActive =
+        isActiveWindow() && isVisible() &&
+        !windowState().testFlag(Qt::WindowMinimized);
+    if (windowActive) {
+      m_webEngine->page()->runJavaScript(
+          "window._whatsieWindowActive = true;");
+    } else {
+      m_webEngine->page()->runJavaScript(
+          "window._whatsieWindowActive = false; "
+          "try { window.blur(); } catch (e) {}");
+    }
+    if (windowActive != m_lastWindowActiveState) {
+      m_lastWindowActiveState = windowActive;
+      m_webEngine->page()->runJavaScript(
+          "if (window._whatsieUpdateVisibility) { "
+          "  window._whatsieUpdateVisibility(); "
+          "}");
+    }
+  });
+  activeSyncTimer->start();
 }
 
 void MainWindow::restoreMainWindow() {
@@ -382,6 +410,22 @@ void MainWindow::changeEvent(QEvent *e) {
               "}, 100);"
           );
       }
+  }
+  if (e->type() == QEvent::WindowStateChange ||
+      e->type() == QEvent::ActivationChange) {
+    if (m_webEngine && m_webEngine->page()) {
+      const bool windowActive =
+          isActiveWindow() && isVisible() &&
+          !windowState().testFlag(Qt::WindowMinimized);
+      if (windowActive) {
+        m_webEngine->page()->runJavaScript(
+            "window._whatsieWindowActive = true;");
+      } else {
+        m_webEngine->page()->runJavaScript(
+            "window._whatsieWindowActive = false; "
+            "try { window.blur(); } catch (e) {}");
+      }
+    }
   }
   QMainWindow::changeEvent(e);
 }

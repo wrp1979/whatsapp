@@ -120,6 +120,7 @@ private:
   AutoLockEventFilter *m_autoLockEventFilter = nullptr;
   Qt::WindowStates windowStateBeforeFullScreen;
   bool m_forceQuit = false;
+  bool m_lastWindowActiveState = true;
 
   QString userDesktopEnvironment = Utils::detectDesktopEnvironment();
 
