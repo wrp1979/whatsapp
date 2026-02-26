@@ -1,3 +1,153 @@
+## 4.16.3 (build 96) - 2026-02-26
+
+#### 🎁 Feature
+* feat(transcription-ui): inject audio transcriber button into WhatsApp Web and add settings UI
+* feat(transcription): add AudioTranscriber and TranscriberBridge for local Whisper GPU inference
+* feat(focus): add Ctrl double-tap toggle and switch modifier to Alt
+
+#### 🐞 Bug Fixes
+* fix(notification): use ToolTip flag and track mouse press to prevent spurious click signals
+* fix(window-sync): sync window active state to JS via timer and changeEvent
+* fix(notifications): remove redundant closed signal connection
+* fix(quit): prevent double quit and ensure clean exit
+* fix(tray): persist unread count badge when window is minimized
+
+#### 📚 Docs
+* docs: document audio transcription feature and focus fix in README
+* docs: update changelog
+* docs: update changelog for build 63
+* docs: update changelog for build 62
+* docs: update changelog for builds 45-61
+* docs: update changelog for builds 43-44
+
+#### 🚧 Chores
+* chore(build): add build dir to gitignore, add whisper/ffmpeg/webchannel deps to project file
+* chore: bump build number to 63
+* chore: bump build number to 62
+* chore: bump build number to 61
+* chore: bump build number to 44
+
+
+## 4.16.3 (build 95) - 2026-02-26
+
+#### 🎁 Feature
+* feat(transcription-ui): inject audio transcriber button into WhatsApp Web and add settings UI
+* feat(transcription): add AudioTranscriber and TranscriberBridge for local Whisper GPU inference
+* feat(focus): add Ctrl double-tap toggle and switch modifier to Alt
+
+#### 🐞 Bug Fixes
+* fix(notification): use ToolTip flag and track mouse press to prevent spurious click signals
+* fix(window-sync): sync window active state to JS via timer and changeEvent
+* fix(notifications): remove redundant closed signal connection
+* fix(quit): prevent double quit and ensure clean exit
+* fix(tray): persist unread count badge when window is minimized
+
+#### 📚 Docs
+* docs: document audio transcription feature and focus fix in README
+* docs: update changelog
+* docs: update changelog for build 63
+* docs: update changelog for build 62
+* docs: update changelog for builds 45-61
+* docs: update changelog for builds 43-44
+
+#### 🚧 Chores
+* chore(build): add build dir to gitignore, add whisper/ffmpeg/webchannel deps to project file
+* chore: bump build number to 63
+* chore: bump build number to 62
+* chore: bump build number to 61
+* chore: bump build number to 44
+
+
+## 4.16.3 (build 94) - 2026-02-26
+
+#### 🎁 Feature
+* feat(transcription-ui): inject audio transcriber button into WhatsApp Web and add settings UI
+* feat(transcription): add AudioTranscriber and TranscriberBridge for local Whisper GPU inference
+* feat(focus): add Ctrl double-tap toggle and switch modifier to Alt
+
+#### 🐞 Bug Fixes
+* fix(notification): use ToolTip flag and track mouse press to prevent spurious click signals
+* fix(window-sync): sync window active state to JS via timer and changeEvent
+* fix(notifications): remove redundant closed signal connection
+* fix(quit): prevent double quit and ensure clean exit
+* fix(tray): persist unread count badge when window is minimized
+
+#### 📚 Docs
+* docs: document audio transcription feature and focus fix in README
+* docs: update changelog
+* docs: update changelog for build 63
+* docs: update changelog for build 62
+* docs: update changelog for builds 45-61
+* docs: update changelog for builds 43-44
+
+#### 🚧 Chores
+* chore(build): add build dir to gitignore, add whisper/ffmpeg/webchannel deps to project file
+* chore: bump build number to 63
+* chore: bump build number to 62
+* chore: bump build number to 61
+* chore: bump build number to 44
+
+
+## 4.16.3 (build 93) - 2026-02-26
+
+#### 🎁 Feature
+* feat(transcription-ui): inject audio transcriber button into WhatsApp Web and add settings UI
+* feat(transcription): add AudioTranscriber and TranscriberBridge for local Whisper GPU inference
+* feat(focus): add Ctrl double-tap toggle and switch modifier to Alt
+
+#### 🐞 Bug Fixes
+* fix(notification): use ToolTip flag and track mouse press to prevent spurious click signals
+* fix(window-sync): sync window active state to JS via timer and changeEvent
+* fix(notifications): remove redundant closed signal connection
+* fix(quit): prevent double quit and ensure clean exit
+* fix(tray): persist unread count badge when window is minimized
+
+#### 📚 Docs
+* docs: document audio transcription feature and focus fix in README
+* docs: update changelog
+* docs: update changelog for build 63
+* docs: update changelog for build 62
+* docs: update changelog for builds 45-61
+* docs: update changelog for builds 43-44
+
+#### 🚧 Chores
+* chore(build): add build dir to gitignore, add whisper/ffmpeg/webchannel deps to project file
+* chore: bump build number to 63
+* chore: bump build number to 62
+* chore: bump build number to 61
+* chore: bump build number to 44
+
+
+## 4.16.3 (build 92) - 2026-02-26
+
+#### 🎁 Feature
+* feat(transcription-ui): inject audio transcriber button into WhatsApp Web and add settings UI
+* feat(transcription): add AudioTranscriber and TranscriberBridge for local Whisper GPU inference
+* feat(focus): add Ctrl double-tap toggle and switch modifier to Alt
+
+#### 🐞 Bug Fixes
+* fix(notification): use ToolTip flag and track mouse press to prevent spurious click signals
+* fix(window-sync): sync window active state to JS via timer and changeEvent
+* fix(notifications): remove redundant closed signal connection
+* fix(quit): prevent double quit and ensure clean exit
+* fix(tray): persist unread count badge when window is minimized
+
+#### 📚 Docs
+* docs: document audio transcription feature and focus fix in README
+* docs: update changelog
+* docs: update changelog for build 63
+* docs: update changelog for build 62
+* docs: update changelog for builds 45-61
+* docs: update changelog for builds 43-44
+
+#### 🚧 Chores
+* chore(build): add build dir to gitignore, add whisper/ffmpeg/webchannel deps to project file
+* chore: bump build number to 63
+* chore: bump build number to 62
+* chore: bump build number to 61
+* chore: bump build number to 44
+
+
 ## 4.16.3 (build 91) - 2026-02-17
 
 #### 🎁 Feature
