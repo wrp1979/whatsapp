@@ -993,6 +993,19 @@ void WebEnginePage::injectInputFocusKeeper() {
 
       // Keyboard shortcut to force focus (Escape key when not in modal)
       document.addEventListener('keydown', (e) => {
+        // Pause focus keeper on Ctrl+V / Cmd+V so paste events reach
+        // the correct element without webkitFocusFix interference.
+        if (!e.repeat && (e.ctrlKey || e.metaKey) && !e.altKey &&
+            (e.key === 'v' || e.key === 'V')) {
+          const inp = getInput();
+          if (inp) {
+            const act = document.activeElement;
+            if (act !== inp && !inp.contains(act) && !hasBlockingModal()) {
+              inp.focus({ preventScroll: true });
+            }
+          }
+          pauseFocusFor(2000);
+        }
         if (e.key === 'Control' && !e.repeat) {
           const now = Date.now();
           if (lastCtrlTapAt && !ctrlTapInterrupted &&
@@ -1019,6 +1032,18 @@ void WebEnginePage::injectInputFocusKeeper() {
 
       // IMPORTANT: Pause focus keeper on paste to allow image modal to appear
       let pasteTimeout = null;
+      function reenableFocusAfterPaste() {
+        if (!hasBlockingModal()) {
+          enabled = true;
+          rafEnabled = true;
+          intervalId = setInterval(brutalFocus, 50);
+          requestAnimationFrame(rafLoop);
+          console.log('[Whatsie] Focus keeper re-enabled after paste');
+        } else {
+          // Modal still open — check again later
+          pasteTimeout = setTimeout(reenableFocusAfterPaste, 1000);
+        }
+      }
       document.addEventListener('paste', (e) => {
         // Check if paste contains files/images
         const hasFiles = e.clipboardData && (
@@ -1032,21 +1057,8 @@ void WebEnginePage::injectInputFocusKeeper() {
           rafEnabled = false;
           clearInterval(intervalId);
 
-          // Re-enable after 3 seconds
           if (pasteTimeout) clearTimeout(pasteTimeout);
-          pasteTimeout = setTimeout(() => {
-            // Only re-enable if no modal is open
-            if (!hasBlockingModal()) {
-              enabled = true;
-              rafEnabled = true;
-              intervalId = setInterval(brutalFocus, 50);
-              requestAnimationFrame(rafLoop);
-              console.log('[Whatsie] Focus keeper re-enabled after paste');
-            } else {
-              // Check again later
-              pasteTimeout = setTimeout(arguments.callee, 1000);
-            }
-          }, 3000);
+          pasteTimeout = setTimeout(reenableFocusAfterPaste, 3000);
         }
       }, true);
 
