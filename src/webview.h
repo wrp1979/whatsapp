@@ -15,8 +15,10 @@ public:
 protected:
   void contextMenuEvent(QContextMenuEvent *event) override;
   void wheelEvent(QWheelEvent *event) override;
+  bool eventFilter(QObject *watched, QEvent *event) override;
 
 private:
+  bool injectImagePaste();
   QStringList m_dictionaries;
 };
 

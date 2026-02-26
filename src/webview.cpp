@@ -1,7 +1,11 @@
 #include "webview.h"
 
+#include <QApplication>
+#include <QBuffer>
+#include <QClipboard>
 #include <QContextMenuEvent>
 #include <QMenu>
+#include <QMimeData>
 #include <QWebEngineProfile>
 #include <QWebEngineContextMenuRequest>
 #include <mainwindow.h>
@@ -19,6 +23,14 @@ WebView::WebView(QWidget *parent, QStringList dictionaries)
           &MainWindow::handleWebViewTitleChanged);
   connect(this, &WebView::loadFinished, mainWindow,
           &MainWindow::handleLoadFinished);
+  // Intercept Ctrl+V to bridge image clipboard from system → JS.
+  // Qt WebEngine on Linux often fails to pass image data from the X11/Wayland
+  // clipboard into JavaScript's clipboardData, so we read it via QClipboard
+  // and inject a synthetic ClipboardEvent with the image as a File blob.
+  // QShortcut doesn't work here (rendering widget eats key events),
+  // so we install an app-level event filter instead.
+  qApp->installEventFilter(this);
+
   connect(this, &WebView::renderProcessTerminated,
           [this](QWebEnginePage::RenderProcessTerminationStatus termStatus,
                  int statusCode) {
@@ -120,4 +132,87 @@ void WebView::contextMenuEvent(QContextMenuEvent *event) {
   }
   connect(menu, &QMenu::aboutToHide, menu, &QObject::deleteLater);
   menu->popup(event->globalPos());
+}
+
+bool WebView::eventFilter(QObject *watched, QEvent *event) {
+  if (event->type() == QEvent::KeyPress) {
+    auto *ke = static_cast<QKeyEvent *>(event);
+    if (ke->matches(QKeySequence::Paste)) {
+      auto *w = qobject_cast<QWidget *>(watched);
+      if ((w == this || (w && isAncestorOf(w))) && injectImagePaste()) {
+        return true; // consumed — image injected via JS
+      }
+    }
+  }
+  return QWebEngineView::eventFilter(watched, event);
+}
+
+bool WebView::injectImagePaste() {
+  if (!page())
+    return false;
+
+  const QClipboard *clipboard = QApplication::clipboard();
+  const QMimeData *mimeData = clipboard->mimeData();
+  if (!mimeData)
+    return false;
+
+  // Try to get image from clipboard (multiple strategies)
+  QImage image;
+  if (mimeData->hasImage()) {
+    image = qvariant_cast<QImage>(mimeData->imageData());
+  }
+  if (image.isNull()) {
+    for (const char *fmt : {"image/png", "image/jpeg", "image/webp", "image/gif"}) {
+      if (mimeData->hasFormat(QString::fromLatin1(fmt))) {
+        QByteArray raw = mimeData->data(QString::fromLatin1(fmt));
+        if (!raw.isEmpty() && image.loadFromData(raw))
+          break;
+      }
+    }
+  }
+  if (image.isNull())
+    return false;
+
+  // Encode as PNG → base64
+  QByteArray pngBytes;
+  QBuffer buffer(&pngBytes);
+  buffer.open(QIODevice::WriteOnly);
+  image.save(&buffer, "PNG");
+  buffer.close();
+  QString base64 = QString::fromLatin1(pngBytes.toBase64());
+
+  // Inject synthetic ClipboardEvent with the image as a File blob.
+  // WhatsApp Web's paste handler picks up the File from clipboardData
+  // and opens the image preview / send modal.
+  QString js = QString(R"JS(
+    (function() {
+      try {
+        var b64 = '%1';
+        var bin = atob(b64);
+        var u8 = new Uint8Array(bin.length);
+        for (var i = 0; i < bin.length; i++) u8[i] = bin.charCodeAt(i);
+        var blob = new Blob([u8], { type: 'image/png' });
+        var file = new File([blob], 'image.png', { type: 'image/png' });
+        var dt = new DataTransfer();
+        dt.items.add(file);
+        var ev = new ClipboardEvent('paste', {
+          bubbles: true, cancelable: true, clipboardData: dt
+        });
+        var el = document.querySelector(
+                   '[contenteditable="true"][data-tab="10"]') ||
+                 document.querySelector(
+                   '[data-testid="conversation-compose-box-input"]') ||
+                 document.activeElement;
+        if (el) {
+          el.focus();
+          el.dispatchEvent(ev);
+        }
+      } catch(e) {
+        console.error('[Whatsie] Image paste injection failed:', e);
+      }
+    })();
+  )JS").arg(base64);
+
+  page()->runJavaScript(js);
+  return true;
 }
