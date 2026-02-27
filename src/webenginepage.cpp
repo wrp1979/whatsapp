@@ -1045,6 +1045,14 @@ void WebEnginePage::injectInputFocusKeeper() {
         }
       }
       document.addEventListener('paste', (e) => {
+        // Block duplicate native paste when C++ bridge already injected one
+        if (window._whatsieInjectingPaste && !e._whatsieInjected) {
+          e.preventDefault();
+          e.stopImmediatePropagation();
+          console.log('[Whatsie] Blocked duplicate native paste');
+          return;
+        }
+
         // Check if paste contains files/images
         const hasFiles = e.clipboardData && (
           e.clipboardData.files.length > 0 ||

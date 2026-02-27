@@ -135,11 +135,16 @@ void WebView::contextMenuEvent(QContextMenuEvent *event) {
 }
 
 bool WebView::eventFilter(QObject *watched, QEvent *event) {
+  Q_UNUSED(watched);
   if (event->type() == QEvent::KeyPress) {
     auto *ke = static_cast<QKeyEvent *>(event);
     if (ke->matches(QKeySequence::Paste)) {
-      auto *w = qobject_cast<QWidget *>(watched);
-      if ((w == this || (w && isAncestorOf(w))) && injectImagePaste()) {
+      // Check if focus is within our WebView (not which object receives
+      // the event).  The key event is delivered first to QWidgetWindow
+      // then to QQuickWidget; we must consume at the first delivery to
+      // prevent Chromium from also processing the native paste.
+      QWidget *fw = QApplication::focusWidget();
+      if (fw && (fw == this || isAncestorOf(fw)) && injectImagePaste()) {
         return true; // consumed — image injected via JS
       }
     }
@@ -198,6 +203,8 @@ bool WebView::injectImagePaste() {
         var ev = new ClipboardEvent('paste', {
           bubbles: true, cancelable: true, clipboardData: dt
         });
+        ev._whatsieInjected = true;
+        window._whatsieInjectingPaste = true;
         var el = document.querySelector(
                    '[contenteditable="true"][data-tab="10"]') ||
                  document.querySelector(
@@ -207,6 +214,7 @@ bool WebView::injectImagePaste() {
           el.focus();
           el.dispatchEvent(ev);
         }
+        setTimeout(function() { window._whatsieInjectingPaste = false; }, 1500);
       } catch(e) {
         console.error('[Whatsie] Image paste injection failed:', e);
       }
