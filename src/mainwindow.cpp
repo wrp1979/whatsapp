@@ -113,7 +113,17 @@ void MainWindow::runMinimized() {
                    "Whatsie started minimized in system tray. Click to Open.");
 }
 
-MainWindow::~MainWindow() { m_webEngine->deleteLater(); }
+MainWindow::~MainWindow() {
+  // Release OTR profile from QScopedPointer — ownership was transferred
+  // to the page via setParent(page) in createWebPage()
+  m_otrProfile.take();
+
+  // Delete WebView (and its child WebEnginePages) BEFORE m_globalProfile
+  // is destroyed by QObject::deleteChildren(), which iterates in forward
+  // creation order (profile was added first, view second)
+  delete m_webEngine;
+  m_webEngine = nullptr;
+}
 
 void MainWindow::loadSchemaUrl(const QString &arg) {
   // https://faq.whatsapp.com/iphone/how-to-link-to-whatsapp-from-a-different-app/?lang=en
@@ -957,6 +967,9 @@ const QIcon MainWindow::getTrayIcon(const int &notificationCount) const {
 }
 
 void MainWindow::createWebPage(bool offTheRecord) {
+  // Delete previous page to avoid leaks (setPage() doesn't delete the old one)
+  auto *oldPage = m_webEngine->page();
+
   if (offTheRecord && !m_otrProfile) {
     m_otrProfile.reset(new QWebEngineProfile);
   }
@@ -991,9 +1004,8 @@ void MainWindow::createWebPage(bool offTheRecord) {
     page->setBackgroundColor(QColor(240, 240, 240)); // whatsapp light bg color
   }
   m_webEngine->setPage(page);
-  // page should be set parent of profile to prevent
-  // Release of profile requested but WebEnginePage still not deleted. Expect
-  // troubles !
+  delete oldPage;
+
   if (profile != m_globalProfile) {
       profile->setParent(page);
   }
@@ -1002,7 +1014,7 @@ void MainWindow::createWebPage(bool offTheRecord) {
       QUrl("https://web.whatsapp.com?v=" + QString::number(randomValue)));
 
   connect(profile, &QWebEngineProfile::downloadRequested,
-          &m_downloadManagerWidget, &DownloadManagerWidget::downloadRequested);
+          this, &MainWindow::handleDownloadRequested, Qt::UniqueConnection);
 
   connect(page, &QWebEnginePage::fullScreenRequested, this,
           &MainWindow::fullScreenRequested);
@@ -1218,28 +1230,66 @@ void MainWindow::loadingQuirk(const QString &test) {
   }
 }
 
-// unused direct method to download file without having entry in download
-// manager
 void MainWindow::handleDownloadRequested(QWebEngineDownloadRequest *download) {
-  QFileDialog dialog(this);
-  bool usenativeFileDialog = SettingsManager::instance()
-                                 .settings()
-                                 .value("useNativeFileDialog", false)
-                                 .toBool();
+  Q_ASSERT(download &&
+           download->state() == QWebEngineDownloadRequest::DownloadRequested);
 
-  if (usenativeFileDialog == false) {
-    dialog.setOption(QFileDialog::DontUseNativeDialog, true);
+  QString dir =
+      SettingsManager::instance()
+          .settings()
+          .value("defaultDownloadLocation",
+                 QStandardPaths::writableLocation(
+                     QStandardPaths::DownloadLocation) +
+                     QDir::separator() + QApplication::applicationName())
+          .toString();
+  QDir().mkpath(dir);
+
+  // Auto-rename on conflict: file(1).ext, file(2).ext, ...
+  QString fileName = download->downloadFileName();
+  QString filePath = dir + QDir::separator() + fileName;
+  if (QFileInfo::exists(filePath)) {
+    QFileInfo fi(fileName);
+    QString baseName = fi.completeBaseName();
+    QString suffix = fi.suffix();
+    int n = 1;
+    do {
+      if (suffix.isEmpty())
+        filePath = dir + QDir::separator() + baseName +
+                   "(" + QString::number(n) + ")";
+      else
+        filePath = dir + QDir::separator() + baseName +
+                   "(" + QString::number(n) + ")." + suffix;
+      n++;
+    } while (QFileInfo::exists(filePath));
+    download->setDownloadFileName(QFileInfo(filePath).fileName());
   }
 
-  dialog.setAcceptMode(QFileDialog::AcceptMode::AcceptSave);
-  dialog.setFileMode(QFileDialog::FileMode::AnyFile);
-  QString suggestedFileName = QUrl(download->downloadDirectory()).fileName();
-  dialog.selectFile(suggestedFileName);
+  download->setDownloadDirectory(dir);
+  download->accept();
 
-  if (dialog.exec() && dialog.selectedFiles().size() > 0) {
-    download->setDownloadDirectory(dialog.selectedFiles().at(0));
-    download->accept();
-  }
+  QString savedName = download->downloadFileName();
+  showNotification("Downloading", savedName);
+
+  connect(download, &QWebEngineDownloadRequest::stateChanged, this,
+          [this, download](QWebEngineDownloadRequest::DownloadState state) {
+            QString name = download->downloadFileName();
+            QString path = download->downloadDirectory() +
+                           QDir::separator() + name;
+            switch (state) {
+            case QWebEngineDownloadRequest::DownloadCompleted:
+              showNotification("Download complete", name);
+              Utils::desktopOpenUrl(path);
+              break;
+            case QWebEngineDownloadRequest::DownloadInterrupted:
+              showNotification("Download failed", name);
+              break;
+            case QWebEngineDownloadRequest::DownloadCancelled:
+              showNotification("Download cancelled", name);
+              break;
+            default:
+              break;
+            }
+          });
 }
 
 void MainWindow::iconActivated(QSystemTrayIcon::ActivationReason reason) {

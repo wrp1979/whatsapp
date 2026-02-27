@@ -26,7 +26,6 @@
 #include "about.h"
 #include "autolockeventfilter.h"
 #include "dictionaries.h"
-#include "downloadmanagerwidget.h"
 #include "lock.h"
 #include "notificationpopup.h"
 #include "requestinterceptor.h"
@@ -95,7 +94,6 @@ private:
   QIcon m_trayIconNormal;
   QRegularExpression m_unreadMessageCountRegExp;
   int m_lastUnreadMessageCount = 0;
-  DownloadManagerWidget m_downloadManagerWidget;
   QScopedPointer<QWebEngineProfile> m_otrProfile;
   QWebEngineProfile *m_globalProfile = nullptr;
   int m_correctlyLoadedRetries = 4;

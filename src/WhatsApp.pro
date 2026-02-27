@@ -107,8 +107,6 @@ SOURCES += \
         audiotranscriber.cpp \
         automatictheme.cpp \
         dictionaries.cpp \
-        downloadmanagerwidget.cpp \
-        downloadwidget.cpp \
         lock.cpp \
         main.cpp \
         mainwindow.cpp \
@@ -133,8 +131,6 @@ HEADERS += \
     common.h \
     def.h \
     dictionaries.h \
-    downloadmanagerwidget.h \
-    downloadwidget.h \
     lock.h \
     mainwindow.h \
     notificationpopup.h \
@@ -154,8 +150,6 @@ FORMS += \
     about.ui \
     automatictheme.ui \
     certificateerrordialog.ui \
-    downloadmanagerwidget.ui \
-    downloadwidget.ui \
     lock.ui \
     passworddialog.ui \
     permissiondialog.ui \
