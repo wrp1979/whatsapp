@@ -967,8 +967,10 @@ const QIcon MainWindow::getTrayIcon(const int &notificationCount) const {
 }
 
 void MainWindow::createWebPage(bool offTheRecord) {
-  // Delete previous page to avoid leaks (setPage() doesn't delete the old one)
-  auto *oldPage = m_webEngine->page();
+  // Track old page with QPointer: setPage() auto-deletes the view's default
+  // page (m_ownsPage), so oldPage becomes null in that case. For pages we
+  // set explicitly, the view does NOT delete them, so we must clean up.
+  QPointer<QWebEnginePage> oldPage = m_webEngine->page();
 
   if (offTheRecord && !m_otrProfile) {
     m_otrProfile.reset(new QWebEngineProfile);
@@ -1004,7 +1006,8 @@ void MainWindow::createWebPage(bool offTheRecord) {
     page->setBackgroundColor(QColor(240, 240, 240)); // whatsapp light bg color
   }
   m_webEngine->setPage(page);
-  delete oldPage;
+  if (oldPage)
+    oldPage->deleteLater();
 
   if (profile != m_globalProfile) {
       profile->setParent(page);
