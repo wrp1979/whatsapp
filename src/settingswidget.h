@@ -1,6 +1,7 @@
 #ifndef SETTINGSWIDGET_H
 #define SETTINGSWIDGET_H
 
+#include <QFutureWatcher>
 #include <QWidget>
 
 #include "permissiondialog.h"
@@ -55,6 +56,7 @@ protected slots:
 private slots:
   QString cachePath();
   QString persistentStoragePath();
+  void refreshCacheSizeAsync();
   void showSetApplockPasswordDialog();
   bool isChildOf(QObject *Of, QObject *self);
   void applyThemeQuirks();
@@ -104,6 +106,9 @@ private:
   Ui::SettingsWidget *ui;
   QString engineCachePath, enginePersistentStoragePath;
   QTimer *themeSwitchTimer;
+  QFutureWatcher<QString> *cacheSizeWatcher = nullptr;
+  bool cacheSizeRefreshPending = false;
+  QString pendingCacheSizePath;
 };
 
 #endif // SETTINGSWIDGET_H

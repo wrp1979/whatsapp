@@ -5,9 +5,10 @@
 #include "mainwindow.h"
 #include <QDateTime>
 #include <QFileDialog>
+#include <QtConcurrent>
 #include <QMessageBox>
-#include <QStyle>
 #include <QProcess>
+#include <QStyle>
 
 #include "automatictheme.h"
 
@@ -24,6 +25,16 @@ SettingsWidget::SettingsWidget(QWidget *parent, int screenNumber,
 
   this->engineCachePath = engineCachePath;
   this->enginePersistentStoragePath = enginePersistentStoragePath;
+  cacheSizeWatcher = new QFutureWatcher<QString>(this);
+
+  connect(cacheSizeWatcher, &QFutureWatcher<QString>::finished, this, [this]() {
+    ui->cookieSize->setText(cacheSizeWatcher->result());
+    if (!cacheSizeRefreshPending) {
+      return;
+    }
+    cacheSizeRefreshPending = false;
+    QTimer::singleShot(0, this, [this]() { refreshCacheSizeAsync(); });
+  });
 
   ui->zoomFactorSpinBox->setRange(0.25, 5.0);
   ui->zoomFactorSpinBox->setValue(SettingsManager::instance()
@@ -223,6 +234,8 @@ SettingsWidget::SettingsWidget(QWidget *parent, int screenNumber,
       this->move(screenRect.center() - this->rect().center());
     }
   }
+
+  refreshCacheSizeAsync();
 }
 
 bool SettingsWidget::eventFilter(QObject *obj, QEvent *event) {
@@ -349,7 +362,7 @@ void SettingsWidget::refresh() {
                              .value("windowTheme", "system")
                              .toString()));
 
-  ui->cookieSize->setText(Utils::refreshCacheSize(persistentStoragePath()));
+  refreshCacheSizeAsync();
 
   // update dict settings at runtime
   //  load settings for spellcheck dictionary
@@ -375,6 +388,28 @@ void SettingsWidget::refresh() {
                                .settings()
                                .value("fullWidthView", true)
                                .toBool());
+}
+
+void SettingsWidget::refreshCacheSizeAsync() {
+  const QString path = persistentStoragePath();
+  if (path.isEmpty()) {
+    ui->cookieSize->setText("0 B");
+    return;
+  }
+
+  pendingCacheSizePath = path;
+  if (cacheSizeWatcher->isRunning()) {
+    cacheSizeRefreshPending = true;
+    return;
+  }
+
+  if (ui->cookieSize->text().trimmed().isEmpty()) {
+    ui->cookieSize->setText(tr("Calculating..."));
+  }
+
+  cacheSizeRefreshPending = false;
+  cacheSizeWatcher->setFuture(
+      QtConcurrent::run([path]() { return Utils::refreshCacheSize(path); }));
 }
 
 void SettingsWidget::updateDefaultUAButton(const QString engineUA) {

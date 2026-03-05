@@ -1,5 +1,6 @@
 #include "utils.h"
 #include "def.h"
+#include <QDirIterator>
 #include <time.h>
 
 Utils::Utils(QObject *parent) : QObject(parent) { setParent(parent); }
@@ -8,23 +9,16 @@ Utils::~Utils() { this->deleteLater(); }
 
 // calculate dir size
 quint64 Utils::dir_size(const QString &directory) {
-  quint64 sizex = 0;
-  QFileInfo str_info(directory);
-  if (str_info.isDir()) {
-    QDir dir(directory);
-    QFileInfoList list =
-        dir.entryInfoList(QDir::Files | QDir::Dirs | QDir::Hidden |
-                          QDir::NoSymLinks | QDir::NoDotAndDotDot);
-    for (int i = 0; i < list.size(); ++i) {
-      QFileInfo fileInfo = list.at(i);
-      if (fileInfo.isDir()) {
-        sizex += dir_size(fileInfo.absoluteFilePath());
-      } else {
-        sizex += fileInfo.size();
-      }
-    }
+  quint64 size = 0;
+  QDirIterator it(directory,
+                  QDir::Files | QDir::Hidden | QDir::System |
+                      QDir::NoSymLinks | QDir::NoDotAndDotDot,
+                  QDirIterator::Subdirectories);
+  while (it.hasNext()) {
+    it.next();
+    size += it.fileInfo().size();
   }
-  return sizex;
+  return size;
 }
 
 // get the size of cache folder in human readble format
