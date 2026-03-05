@@ -855,17 +855,9 @@ void WebEnginePage::injectInputFocusKeeper() {
         }
       }
 
-      // Aggressive loop - 50ms interval (balanced between responsiveness and not blocking paste)
-      let intervalId = setInterval(brutalFocus, 50);
-
-      // RAF loop for smooth focus
-      let rafEnabled = true;
-      function rafLoop() {
-        if (!rafEnabled) return;
-        brutalFocus();
-        requestAnimationFrame(rafLoop);
-      }
-      requestAnimationFrame(rafLoop);
+      // Keep polling only as a low-frequency fallback; the event hooks handle
+      // the interactive cases immediately.
+      let intervalId = setInterval(brutalFocus, 500);
 
       // Detect modal close and IMMEDIATELY focus with burst
       const observer = new MutationObserver(() => {
@@ -884,10 +876,6 @@ void WebEnginePage::injectInputFocusKeeper() {
         }
         lastModalState = currentModalState;
 
-        // Also try on any DOM change
-        if (!currentModalState) {
-          brutalFocus();
-        }
       });
 
       observer.observe(document.body, {
@@ -1035,9 +1023,8 @@ void WebEnginePage::injectInputFocusKeeper() {
       function reenableFocusAfterPaste() {
         if (!hasBlockingModal()) {
           enabled = true;
-          rafEnabled = true;
-          intervalId = setInterval(brutalFocus, 50);
-          requestAnimationFrame(rafLoop);
+          clearInterval(intervalId);
+          intervalId = setInterval(brutalFocus, 500);
           console.log('[Whatsie] Focus keeper re-enabled after paste');
         } else {
           // Modal still open — check again later
@@ -1062,7 +1049,6 @@ void WebEnginePage::injectInputFocusKeeper() {
         if (hasFiles) {
           console.log('[Whatsie] Image paste detected - pausing focus keeper for 3s');
           enabled = false;
-          rafEnabled = false;
           clearInterval(intervalId);
 
           if (pasteTimeout) clearTimeout(pasteTimeout);
@@ -1074,15 +1060,12 @@ void WebEnginePage::injectInputFocusKeeper() {
       window._whatsieFocusControl = {
         enable: () => {
           enabled = true;
-          rafEnabled = true;
           clearInterval(intervalId);
-          intervalId = setInterval(brutalFocus, 50);
-          requestAnimationFrame(rafLoop);
+          intervalId = setInterval(brutalFocus, 500);
           console.log('[Whatsie] Focus keeper enabled');
         },
         disable: () => {
           enabled = false;
-          rafEnabled = false;
           clearInterval(intervalId);
           console.log('[Whatsie] Focus keeper disabled');
         },
@@ -1141,7 +1124,7 @@ void WebEnginePage::setupWebChannel(QWebEngineProfile *profile) {
 (function() {
   if (window._whatsieEarlyIntercept) return;
   window._whatsieEarlyIntercept = true;
-  window._whatsieCaptured = [];  // [{buf, mime, t}]
+  window._whatsieCaptured = null;  // {buf, mime, t}
   window._whatsieLastClick = {el: null, t: 0};
 
   // Record last clicked element (capture phase = fires before WhatsApp handlers)
@@ -1151,11 +1134,23 @@ void WebEnginePage::setupWebChannel(QWebEngineProfile *profile) {
 
   function saveBuf(buf, mime) {
     try {
-      var copy = buf.slice ? buf.slice(0) : buf;
-      window._whatsieCaptured.push({buf: copy, mime: mime || 'audio/ogg', t: Date.now()});
-      // Keep at most 10 recent buffers
-      if (window._whatsieCaptured.length > 10)
-        window._whatsieCaptured.shift();
+      var copy = buf;
+      if (buf && typeof ArrayBuffer !== 'undefined' &&
+          typeof ArrayBuffer.isView === 'function' &&
+          ArrayBuffer.isView(buf) && buf.buffer) {
+        copy = buf.buffer.slice ? buf.buffer.slice(0) : buf.buffer;
+      } else if (buf && typeof ArrayBuffer !== 'undefined' &&
+                 !(buf instanceof ArrayBuffer) && buf.slice) {
+        copy = buf.slice(0);
+      }
+      window._whatsieCaptured = {
+        buf: copy,
+        mime: mime || 'audio/ogg',
+        t: Date.now()
+      };
+      if (typeof window._whatsieOnCapturedAudio === 'function') {
+        try { window._whatsieOnCapturedAudio(); } catch(e) {}
+      }
     } catch(e) {}
   }
 
@@ -1223,7 +1218,10 @@ void WebEnginePage::injectAudioTranscriber() {
       window._whatsieAudioTranscriber = true;
 
       var bridge = null;
-      var LOG = function(msg) { console.log('[Whatsie] ' + msg); };
+      var DEBUG = false;
+      var LOG = function(msg) {
+        if (DEBUG) console.log('[Whatsie] ' + msg);
+      };
 
       // -----------------------------------------------------------------
       // QWebChannel init
@@ -1237,9 +1235,11 @@ void WebEnginePage::injectAudioTranscriber() {
           bridge = channel.objects.transcriber;
           bridge.transcriptionReady.connect(function(msgId, text) {
             showTranscription(msgId, text, false);
+            removeSavedBuffer(msgId);
           });
           bridge.transcriptionError.connect(function(msgId, errText) {
             showTranscription(msgId, '\u26a0 ' + errText, true);
+            removeSavedBuffer(msgId);
           });
           LOG('Bridge ready');
         });
@@ -1248,8 +1248,63 @@ void WebEnginePage::injectAudioTranscriber() {
       // -----------------------------------------------------------------
       // Saved audio buffers: key = msgId, value = {buf, mime}
       // -----------------------------------------------------------------
+      var MAX_SAVED_BUFFERS = 4;
+      var MAX_SAVED_BUFFER_BYTES = 32 * 1024 * 1024;
       var savedBuffers = {};
+      var savedBufferOrder = [];
+      var savedBufferBytes = 0;
       var lastMsgId    = null;
+      var capturedFlushTimer = null;
+      var mainRoot = null;
+      var ariaObserverActive = false;
+      var ariaObserverStopTimer = null;
+      var audioObserverActive = false;
+      var audioObserverStopTimer = null;
+
+      function getMainRoot() {
+        if (mainRoot && document.documentElement &&
+            document.documentElement.contains(mainRoot)) {
+          return mainRoot;
+        }
+        mainRoot = document.querySelector('#main') || document.body;
+        return mainRoot;
+      }
+
+      function removeSavedBuffer(msgId) {
+        var saved = savedBuffers[msgId];
+        if (!saved) return;
+        savedBufferBytes = Math.max(0, savedBufferBytes - (saved.size || 0));
+        delete savedBuffers[msgId];
+        var idx = savedBufferOrder.indexOf(msgId);
+        if (idx >= 0) savedBufferOrder.splice(idx, 1);
+        if (lastMsgId === msgId) {
+          lastMsgId = savedBufferOrder.length
+            ? savedBufferOrder[savedBufferOrder.length - 1]
+            : null;
+        }
+      }
+
+      function rememberSavedBuffer(msgId, buf, mime) {
+        removeSavedBuffer(msgId);
+        var size = buf && typeof buf.byteLength === 'number'
+          ? buf.byteLength
+          : 0;
+        savedBuffers[msgId] = {
+          buf: buf,
+          mime: mime || 'audio/ogg',
+          size: size,
+          pending: false
+        };
+        savedBufferOrder.push(msgId);
+        savedBufferBytes += size;
+        lastMsgId = msgId;
+
+        while ((savedBufferOrder.length > MAX_SAVED_BUFFERS ||
+                (savedBufferBytes > MAX_SAVED_BUFFER_BYTES &&
+                 savedBufferOrder.length > 1))) {
+          removeSavedBuffer(savedBufferOrder[0]);
+        }
+      }
 
       // -----------------------------------------------------------------
       // Walk up from el to find the WA message container ([data-id] div)
@@ -1288,9 +1343,19 @@ void WebEnginePage::injectAudioTranscriber() {
       // -----------------------------------------------------------------
       var processedContainers = new WeakSet();
       function addButtonToContainer(container, msgId) {
+        container.dataset.whatsieId = msgId;
+        var existingBtn = container.querySelector('.whatsie-transcribe-btn');
+        if (existingBtn) {
+          existingBtn.textContent = '\uD83D\uDCDD';
+          existingBtn.disabled = false;
+          existingBtn.onclick = function(e) {
+            e.stopPropagation(); e.preventDefault();
+            transcribeById(msgId, existingBtn);
+          };
+          return;
+        }
         if (processedContainers.has(container)) return;
         processedContainers.add(container);
-        container.dataset.whatsieId = msgId;
 
         var btn = document.createElement('button');
         btn.className = 'whatsie-transcribe-btn';
@@ -1330,21 +1395,26 @@ void WebEnginePage::injectAudioTranscriber() {
       // (window._whatsieCaptured) and also keep our own decodeAudioData
       // intercept as a secondary layer.
       // -----------------------------------------------------------------
-      function pollCaptured() {
-        var caps = window._whatsieCaptured || [];
-        if (caps.length > 0) {
-          var latest = caps[caps.length - 1];
+      function scheduleCapturedFlush() {
+        if (capturedFlushTimer) return;
+        capturedFlushTimer = setTimeout(function() {
+          capturedFlushTimer = null;
+          var latest = window._whatsieCaptured;
+          if (!latest || !latest.buf) return;
+          window._whatsieCaptured = null;
+
           var msgId = 'wa_' + Math.random().toString(36).slice(2) + '_' + Date.now();
-          savedBuffers[msgId] = {buf: latest.buf, mime: latest.mime || 'audio/ogg'};
-          lastMsgId = msgId;
-          LOG('Audio pulled from early intercept: ' + Math.round(latest.buf.byteLength / 1024) + ' KB');
+          rememberSavedBuffer(msgId, latest.buf, latest.mime || 'audio/ogg');
+          armAriaObserver(3000);
+          armAudioObserver(4000);
+          LOG('Audio captured: ' +
+              Math.round((latest.buf.byteLength || 0) / 1024) + ' KB');
           tryAttachButtonForLastDecode(msgId);
-          // Clear consumed buffers
-          window._whatsieCaptured = [];
-        }
+        }, 120);
       }
-      // Poll for new captures every 300ms
-      setInterval(pollCaptured, 300);
+      window._whatsieOnCapturedAudio = scheduleCapturedFlush;
+      scheduleCapturedFlush();
+      setInterval(scheduleCapturedFlush, 2000);
 
       // -----------------------------------------------------------------
       // After a decode call, look for the message container that was
@@ -1359,9 +1429,19 @@ void WebEnginePage::injectAudioTranscriber() {
           }
         });
       });
-      ariaObserver.observe(document.body, {
-        attributes: true, subtree: true, attributeFilter: ['aria-label']
-      });
+      function armAriaObserver(durationMs) {
+        if (ariaObserverStopTimer) clearTimeout(ariaObserverStopTimer);
+        if (!ariaObserverActive) {
+          ariaObserver.observe(getMainRoot(), {
+            attributes: true, subtree: true, attributeFilter: ['aria-label']
+          });
+          ariaObserverActive = true;
+        }
+        ariaObserverStopTimer = setTimeout(function() {
+          ariaObserver.disconnect();
+          ariaObserverActive = false;
+        }, durationMs || 3000);
+      }
 
       function tryAttachButtonForLastDecode(msgId) {
         // --- pick best anchor element (proper cascade) ---
@@ -1408,6 +1488,16 @@ void WebEnginePage::injectAudioTranscriber() {
 
         var tracker = container || insertParent;
         tracker.dataset.whatsieId = msgId;
+        var existingBtn = tracker.querySelector('.whatsie-transcribe-btn');
+        if (existingBtn) {
+          existingBtn.textContent = '\uD83D\uDCDD';
+          existingBtn.disabled = false;
+          existingBtn.onclick = function(e) {
+            e.stopPropagation(); e.preventDefault();
+            transcribeById(msgId, existingBtn);
+          };
+          return;
+        }
         if (processedContainers.has(tracker)) { LOG('tryAttach: already done'); return; }
         processedContainers.add(tracker);
 
@@ -1460,8 +1550,7 @@ void WebEnginePage::injectAudioTranscriber() {
         var msgId = 'wa_audio_' + Math.random().toString(36).slice(2);
         // Lazily fetch the blob and save it
         fetch(src).then(function(r) { return r.arrayBuffer(); }).then(function(buf) {
-          savedBuffers[msgId] = {buf: buf, mime: audio.type || 'audio/ogg'};
-          lastMsgId = msgId;
+          rememberSavedBuffer(msgId, buf, audio.type || 'audio/ogg');
           var container = findMsgContainer(audio);
           if (container) addButtonToContainer(container, msgId);
         }).catch(function() {});
@@ -1478,10 +1567,29 @@ void WebEnginePage::injectAudioTranscriber() {
             tryAttachFromAudio(m.target);
         });
       });
-      audioElObserver.observe(document.body, {
-        childList: true, subtree: true,
-        attributes: true, attributeFilter: ['src']
-      });
+      function armAudioObserver(durationMs) {
+        if (audioObserverStopTimer) clearTimeout(audioObserverStopTimer);
+        if (!audioObserverActive) {
+          audioElObserver.observe(getMainRoot(), {
+            childList: true, subtree: true,
+            attributes: true, attributeFilter: ['src']
+          });
+          audioObserverActive = true;
+        }
+        audioObserverStopTimer = setTimeout(function() {
+          audioElObserver.disconnect();
+          audioObserverActive = false;
+        }, durationMs || 4000);
+      }
+
+      document.addEventListener('click', function(e) {
+        try {
+          if (e.target && e.target.closest && e.target.closest('#main')) {
+            armAriaObserver(3000);
+            armAudioObserver(4000);
+          }
+        } catch(err) {}
+      }, true);
 
       // -----------------------------------------------------------------
       // Transcribe by message id (uses saved buffer)
@@ -1496,12 +1604,21 @@ void WebEnginePage::injectAudioTranscriber() {
           showTranscription(msgId, '\u26a0 Bridge n\u00e3o pronto, aguarde...', true);
           return;
         }
+        if (saved.pending) return;
+        saved.pending = true;
         btn.textContent = '\u23F3'; btn.disabled = true;
         var u8 = new Uint8Array(saved.buf);
         var bin = '';
         for (var i = 0; i < u8.length; i += 8192)
           bin += String.fromCharCode.apply(null, u8.subarray(i, i + 8192));
-        bridge.requestTranscription(btoa(bin), msgId, saved.mime);
+        try {
+          bridge.requestTranscription(btoa(bin), msgId, saved.mime);
+        } catch (err) {
+          saved.pending = false;
+          btn.textContent = '\uD83D\uDCDD';
+          btn.disabled = false;
+          showTranscription(msgId, '\u26a0 Falha ao iniciar transcri\u00e7\u00e3o', true);
+        }
       }
 
       // -----------------------------------------------------------------
