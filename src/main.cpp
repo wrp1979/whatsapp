@@ -13,6 +13,10 @@
 int main(int argc, char *argv[]) {
 
   QApplication::setAttribute(Qt::AA_EnableHighDpiScaling);
+  QApplication::setApplicationName("WhatSie");
+  QApplication::setOrganizationDomain("com.ktechpit");
+  QApplication::setOrganizationName("org.keshavnrj.ubuntu");
+  QApplication::setApplicationVersion(VERSIONSTR);
 
 #ifdef QT_DEBUG
   qputenv("QTWEBENGINE_CHROMIUM_FLAGS",
@@ -24,14 +28,15 @@ int main(int argc, char *argv[]) {
           "--disable-extensions");
 #endif
 
-  SingleApplication instance(argc, argv, true);
+  const SingleApplication::Options singleAppOptions =
+      SingleApplication::Mode::User |
+      SingleApplication::Mode::ExcludeAppVersion |
+      SingleApplication::Mode::ExcludeAppPath;
+  SingleApplication instance(argc, argv, true, singleAppOptions, 1000,
+                             QStringLiteral("default-profile"));
   instance.setQuitOnLastWindowClosed(false);
   instance.setWindowIcon(QIcon(":/icons/app/icon-64.png"));
-  QApplication::setApplicationName("WhatSie");
   QApplication::setDesktopFileName("whatsie");
-  QApplication::setOrganizationDomain("com.ktechpit");
-  QApplication::setOrganizationName("org.keshavnrj.ubuntu");
-  QApplication::setApplicationVersion(VERSIONSTR);
 
   qputenv("QTWEBENGINE_DICTIONARIES_PATH",
           Dictionaries::GetDictionaryPath().toUtf8().constData());
