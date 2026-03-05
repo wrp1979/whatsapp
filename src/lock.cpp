@@ -1,6 +1,8 @@
 #include "lock.h"
 #include "ui_lock.h"
 
+#include <QApplication>
+
 #if defined(Q_OS_LINUX)
 #include <X11/XKBlib.h> // keep this header at bottom
 #elif defined(Q_OS_WIN)
@@ -139,14 +141,22 @@ void Lock::applyThemeQuirks() {
                    "border-bottom-left-radius: 4px;";
   QString lightBg = "background-color: rgb(37, 211, 102);";
   QString darkBg = "background-color: rgb(0, 117, 96);";
-  if (QString::compare(SettingsManager::instance()
-                           .settings()
-                           .value("windowTheme", "light")
-                           .toString(),
-                       "dark", Qt::CaseInsensitive) == 0) { // light
+
+  const QString preferredTheme = SettingsManager::instance()
+                                     .settings()
+                                     .value("windowTheme", "system")
+                                     .toString()
+                                     .trimmed()
+                                     .toLower();
+  const bool isDarkTheme =
+      preferredTheme == "dark" ||
+      (preferredTheme == "system" &&
+       qApp->palette().color(QPalette::Window).value() < 128);
+
+  if (isDarkTheme) {
     ui->bottomLine->setStyleSheet(darkBg + border);
     ui->bottomLine_2->setStyleSheet(darkBg + border);
-  } else { // dark
+  } else {
     ui->bottomLine->setStyleSheet(lightBg + border);
     ui->bottomLine_2->setStyleSheet(lightBg + border);
   }

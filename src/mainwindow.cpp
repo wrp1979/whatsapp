@@ -37,30 +37,9 @@ MainWindow::MainWindow(QWidget *parent)
   initAutoLock();
 
   auto *activeSyncTimer = new QTimer(this);
-  activeSyncTimer->setInterval(500);
-  connect(activeSyncTimer, &QTimer::timeout, this, [this]() {
-    if (!m_webEngine || !m_webEngine->page()) {
-      return;
-    }
-    const bool windowActive =
-        isActiveWindow() && isVisible() &&
-        !windowState().testFlag(Qt::WindowMinimized);
-    if (windowActive) {
-      m_webEngine->page()->runJavaScript(
-          "window._whatsieWindowActive = true;");
-    } else {
-      m_webEngine->page()->runJavaScript(
-          "window._whatsieWindowActive = false; "
-          "try { window.blur(); } catch (e) {}");
-    }
-    if (windowActive != m_lastWindowActiveState) {
-      m_lastWindowActiveState = windowActive;
-      m_webEngine->page()->runJavaScript(
-          "if (window._whatsieUpdateVisibility) { "
-          "  window._whatsieUpdateVisibility(); "
-          "}");
-    }
-  });
+  activeSyncTimer->setInterval(2000);
+  connect(activeSyncTimer, &QTimer::timeout, this,
+          [this]() { syncWindowActiveState(); });
   activeSyncTimer->start();
 }
 
@@ -144,27 +123,41 @@ void MainWindow::loadSchemaUrl(const QString &arg) {
   }
 }
 
-bool MainWindow::isSystemDark() {
-    QProcess p;
-    p.start("gsettings", QStringList() << "get" << "org.gnome.desktop.interface" << "color-scheme");
-    if (p.waitForFinished(500)) {
-        QString output = p.readAllStandardOutput().trimmed();
-        return output.contains("dark", Qt::CaseInsensitive);
-    }
-    return QApplication::style()->standardPalette().color(QPalette::Window).value() < 128;
+bool MainWindow::isSystemDark() const {
+  QProcess p;
+  p.start("gsettings", QStringList() << "get"
+                                     << "org.gnome.desktop.interface"
+                                     << "color-scheme");
+  if (p.waitForFinished(500)) {
+    QString output = p.readAllStandardOutput().trimmed();
+    return output.contains("dark", Qt::CaseInsensitive);
+  }
+  return QApplication::style()
+             ->standardPalette()
+             .color(QPalette::Window)
+             .value() < 128;
+}
+
+QString MainWindow::preferredWindowTheme() const {
+  return SettingsManager::instance()
+      .settings()
+      .value("windowTheme", "system")
+      .toString()
+      .trimmed()
+      .toLower();
+}
+
+QString MainWindow::resolvedWindowTheme() const {
+  const QString preferredTheme = preferredWindowTheme();
+  if (preferredTheme == "dark" || preferredTheme == "light") {
+    return preferredTheme;
+  }
+  return isSystemDark() ? "dark" : "light";
 }
 
 void MainWindow::updatePageTheme() {
   if (m_webEngine && m_webEngine->page()) {
-
-    QString windowTheme = SettingsManager::instance()
-                              .settings()
-                              .value("windowTheme", "system")
-                              .toString();
-
-    if (windowTheme == "system") {
-        windowTheme = isSystemDark() ? "dark" : "light";
-    }
+    const QString windowTheme = resolvedWindowTheme();
 
     if (windowTheme == "dark") {
       m_webEngine->page()->runJavaScript(
@@ -199,14 +192,7 @@ void MainWindow::updateWindowTheme() {
                                            .value("widgetStyle", "Fusion")
                                            .toString()));
 
-  QString theme = SettingsManager::instance()
-                      .settings()
-                      .value("windowTheme", "system")
-                      .toString();
-
-  if (theme == "system") {
-      theme = isSystemDark() ? "dark" : "light";
-  }
+  const QString theme = resolvedWindowTheme();
 
   if (theme == "dark") {
     qApp->setPalette(Theme::getDarkPalette());
@@ -235,6 +221,35 @@ void MainWindow::updateWindowTheme() {
 
 void MainWindow::handleCookieAdded(const QNetworkCookie &cookie) {
   qDebug() << cookie.toRawForm() << "\n\n\n";
+}
+
+void MainWindow::syncWindowActiveState(bool forceVisibilityUpdate) {
+  if (!m_webEngine || !m_webEngine->page()) {
+    return;
+  }
+
+  const bool windowActive =
+      isActiveWindow() && isVisible() &&
+      !windowState().testFlag(Qt::WindowMinimized);
+  if (!forceVisibilityUpdate && windowActive == m_lastWindowActiveState) {
+    return;
+  }
+
+  m_lastWindowActiveState = windowActive;
+  if (windowActive) {
+    m_webEngine->page()->runJavaScript(
+        "window._whatsieWindowActive = true; "
+        "if (window._whatsieUpdateVisibility) { "
+        "  window._whatsieUpdateVisibility(); "
+        "}");
+  } else {
+    m_webEngine->page()->runJavaScript(
+        "window._whatsieWindowActive = false; "
+        "try { window.blur(); } catch (e) {} "
+        "if (window._whatsieUpdateVisibility) { "
+        "  window._whatsieUpdateVisibility(); "
+        "}");
+  }
 }
 
 void MainWindow::forceLogOut() {
@@ -408,34 +423,26 @@ void MainWindow::changeEvent(QEvent *e) {
   if (e->type() == QEvent::WindowStateChange) {
     handleZoomOnWindowStateChange(static_cast<QWindowStateChangeEvent *>(e));
   } else if (e->type() == QEvent::ActivationChange) {
-      if (isActiveWindow() && m_webEngine && m_webEngine->page()) {
-          // Fix for focus bug: Force focus on the input field when window becomes active
-          m_webEngine->page()->runJavaScript(
-              "setTimeout(() => {"
-              "  const editor = document.querySelector('div[contenteditable=\"true\"][data-tab=\"10\"]') || "
-              "                 document.querySelector('footer div[contenteditable=\"true\"]');"
-              "  const sel = window.getSelection && window.getSelection();"
-              "  const hasSelection = sel && !sel.isCollapsed && sel.rangeCount > 0;"
-              "  if (editor && !hasSelection) { editor.focus(); }"
-              "}, 100);"
-          );
-      }
+    if (isActiveWindow() && preferredWindowTheme() == "system") {
+      updateWindowTheme();
+      updatePageTheme();
+    }
+    if (isActiveWindow() && m_webEngine && m_webEngine->page()) {
+      // Fix for focus bug: Force focus on the input field when window becomes
+      // active.
+      m_webEngine->page()->runJavaScript(
+          "setTimeout(() => {"
+          "  const editor = document.querySelector('div[contenteditable=\"true\"][data-tab=\"10\"]') || "
+          "                 document.querySelector('footer div[contenteditable=\"true\"]');"
+          "  const sel = window.getSelection && window.getSelection();"
+          "  const hasSelection = sel && !sel.isCollapsed && sel.rangeCount > 0;"
+          "  if (editor && !hasSelection) { editor.focus(); }"
+          "}, 100);");
+    }
   }
   if (e->type() == QEvent::WindowStateChange ||
       e->type() == QEvent::ActivationChange) {
-    if (m_webEngine && m_webEngine->page()) {
-      const bool windowActive =
-          isActiveWindow() && isVisible() &&
-          !windowState().testFlag(Qt::WindowMinimized);
-      if (windowActive) {
-        m_webEngine->page()->runJavaScript(
-            "window._whatsieWindowActive = true;");
-      } else {
-        m_webEngine->page()->runJavaScript(
-            "window._whatsieWindowActive = false; "
-            "try { window.blur(); } catch (e) {}");
-      }
-    }
+    syncWindowActiveState(true);
   }
   QMainWindow::changeEvent(e);
 }
@@ -560,7 +567,6 @@ void MainWindow::showAbout() {
 
 void MainWindow::closeEvent(QCloseEvent *event) {
   SettingsManager::instance().settings().setValue("geometry", saveGeometry());
-  getPageTheme();
   QTimer::singleShot(500, m_settingsWidget,
                      [=]() { m_settingsWidget->refresh(); });
 
@@ -716,7 +722,6 @@ void MainWindow::quitApp() {
   }
   m_forceQuit = true;
   SettingsManager::instance().settings().setValue("geometry", saveGeometry());
-  getPageTheme();
   QTimer::singleShot(500, this, [=]() {
     SettingsManager::instance().settings().setValue("firstrun_tray", true);
     qApp->quit();
@@ -997,10 +1002,7 @@ void MainWindow::createWebPage(bool offTheRecord) {
   setNotificationPresenter(profile);
 
   QWebEnginePage *page = new WebEnginePage(profile, m_webEngine);
-  if (SettingsManager::instance()
-          .settings()
-          .value("windowTheme", "light")
-          .toString() == "dark") {
+  if (resolvedWindowTheme() == "dark") {
     page->setBackgroundColor(QColor(17, 27, 33)); // whatsapp dark bg color
   } else {
     page->setBackgroundColor(QColor(240, 240, 240)); // whatsapp light bg color
@@ -1167,6 +1169,7 @@ void MainWindow::handleLoadFinished(bool loaded) {
     qDebug() << "Loaded";
     checkLoadedCorrectly();
     updatePageTheme();
+    syncWindowActiveState(true);
     handleZoom();
     if (m_settingsWidget != nullptr) {
       m_settingsWidget->refresh();
@@ -1401,7 +1404,7 @@ QString MainWindow::getPageTheme() const {
         [=](const QVariant &result) {
           theme = result.toString();
           theme.contains("dark") ? theme = "dark" : theme = "light";
-          SettingsManager::instance().settings().setValue("windowTheme", theme);
+          SettingsManager::instance().settings().setValue("pageTheme", theme);
         });
   }
   return theme;

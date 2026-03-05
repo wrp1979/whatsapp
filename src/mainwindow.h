@@ -70,7 +70,9 @@ private:
   void createTrayIcon();
   void createWebEngine();
   QString getPageTheme() const;
-  bool isSystemDark();
+  bool isSystemDark() const;
+  QString preferredWindowTheme() const;
+  QString resolvedWindowTheme() const;
   void handleCookieAdded(const QNetworkCookie &cookie);
   void doAppReload();
   void askToReloadPage();
@@ -79,6 +81,7 @@ private:
   void initSettingWidget();
   void initGlobalWebProfile();
   void tryLock();
+  void syncWindowActiveState(bool forceVisibilityUpdate = false);
   void checkLoadedCorrectly();
   void loadingQuirk(const QString &test);
   void setNotificationPresenter(QWebEngineProfile *profile);
