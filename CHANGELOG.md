@@ -4162,4 +4162,3 @@
 - feat(WebApp) tested for new WhatsApp Web that lets users use Whatsie without requiring the phone connected to the internet
 - fix(Lock) unify passowrd echomode in lock widget
 
-
