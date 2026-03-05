@@ -25,7 +25,7 @@ public:
   static QString defaultModelPath();
 
 public slots:
-  void transcribe(const QByteArray &audioData, const QString &messageId,
+  void transcribe(QByteArray audioData, const QString &messageId,
                   const QString &mimeType);
 
 signals:

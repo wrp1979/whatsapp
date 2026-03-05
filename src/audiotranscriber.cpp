@@ -20,6 +20,7 @@ extern "C" {
 #include <QMutexLocker>
 #include <QStandardPaths>
 #include <QTemporaryFile>
+#include <utility>
 
 AudioTranscriber::AudioTranscriber(QObject *parent) : QObject(parent) {}
 
@@ -288,7 +289,7 @@ AudioTranscriber::runWhisperInference(const std::vector<float> &pcm) const {
 // ---------------------------------------------------------------------------
 // Public slot: transcribe
 // ---------------------------------------------------------------------------
-void AudioTranscriber::transcribe(const QByteArray &audioData,
+void AudioTranscriber::transcribe(QByteArray audioData,
                                   const QString &messageId,
                                   const QString &mimeType) {
   Q_UNUSED(mimeType)
@@ -323,12 +324,11 @@ void AudioTranscriber::transcribe(const QByteArray &audioData,
   }
 
   // Dispatch decode + inference to thread pool
-  QByteArray dataCopy = audioData;
-  QString    msgId    = messageId;
+  QString msgId = messageId;
 
-  QtConcurrent::run([this, dataCopy, msgId]() {
+  QtConcurrent::run([this, data = std::move(audioData), msgId]() {
     QString decodeError;
-    const std::vector<float> pcm = decodeAudioToPcm(dataCopy, decodeError);
+    const std::vector<float> pcm = decodeAudioToPcm(data, decodeError);
 
     if (pcm.empty()) {
       emit transcriptionError(

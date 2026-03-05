@@ -1,5 +1,7 @@
 #include "transcriberbridge.h"
 
+#include <utility>
+
 TranscriberBridge::TranscriberBridge(AudioTranscriber *transcriber,
                                      QObject *parent)
     : QObject(parent), m_transcriber(transcriber) {
@@ -12,7 +14,6 @@ TranscriberBridge::TranscriberBridge(AudioTranscriber *transcriber,
 void TranscriberBridge::requestTranscription(const QString &base64Audio,
                                              const QString &messageId,
                                              const QString &mimeType) {
-  const QByteArray audioData =
-      QByteArray::fromBase64(base64Audio.toUtf8());
-  m_transcriber->transcribe(audioData, messageId, mimeType);
+  QByteArray audioData = QByteArray::fromBase64(base64Audio.toUtf8());
+  m_transcriber->transcribe(std::move(audioData), messageId, mimeType);
 }
