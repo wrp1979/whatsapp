@@ -1125,6 +1125,7 @@ void WebEnginePage::setupWebChannel(QWebEngineProfile *profile) {
   if (window._whatsieEarlyIntercept) return;
   window._whatsieEarlyIntercept = true;
   window._whatsieCaptured = null;  // {buf, mime, t}
+  window._whatsieCaptureNotifyPending = false;
   window._whatsieLastClick = {el: null, t: 0};
 
   // Record last clicked element (capture phase = fires before WhatsApp handlers)
@@ -1136,11 +1137,13 @@ void WebEnginePage::setupWebChannel(QWebEngineProfile *profile) {
     try {
       var copy = buf;
       if (buf && typeof ArrayBuffer !== 'undefined' &&
-          typeof ArrayBuffer.isView === 'function' &&
-          ArrayBuffer.isView(buf) && buf.buffer) {
-        copy = buf.buffer.slice ? buf.buffer.slice(0) : buf.buffer;
+          buf instanceof ArrayBuffer && buf.slice) {
+        copy = buf.slice(0);
       } else if (buf && typeof ArrayBuffer !== 'undefined' &&
-                 !(buf instanceof ArrayBuffer) && buf.slice) {
+                 typeof ArrayBuffer.isView === 'function' &&
+                 ArrayBuffer.isView(buf) && buf.buffer) {
+        copy = buf.buffer.slice ? buf.buffer.slice(0) : buf.buffer;
+      } else if (buf && buf.slice) {
         copy = buf.slice(0);
       }
       window._whatsieCaptured = {
@@ -1148,9 +1151,14 @@ void WebEnginePage::setupWebChannel(QWebEngineProfile *profile) {
         mime: mime || 'audio/ogg',
         t: Date.now()
       };
-      if (typeof window._whatsieOnCapturedAudio === 'function') {
-        try { window._whatsieOnCapturedAudio(); } catch(e) {}
-      }
+      if (window._whatsieCaptureNotifyPending) return;
+      window._whatsieCaptureNotifyPending = true;
+      setTimeout(function() {
+        window._whatsieCaptureNotifyPending = false;
+        if (typeof window._whatsieOnCapturedAudio === 'function') {
+          try { window._whatsieOnCapturedAudio(); } catch(e) {}
+        }
+      }, 0);
     } catch(e) {}
   }
 
