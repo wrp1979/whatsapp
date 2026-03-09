@@ -1,3 +1,103 @@
+## 4.16.3 (build 103) - 2026-03-09
+
+#### 🎁 Feature
+* feat(paste): inject image paste from system clipboard into WhatsApp Web
+* feat(transcription-ui): inject audio transcriber button into WhatsApp Web and add settings UI
+* feat(transcription): add AudioTranscriber and TranscriberBridge for local Whisper GPU inference
+* feat(focus): add Ctrl double-tap toggle and switch modifier to Alt
+
+#### 🐞 Bug Fixes
+* fix(webengine): use QPointer and deleteLater for safe page cleanup
+* fix(paste): prevent duplicate native paste when C++ bridge injects image
+* fix(focus): pause focus keeper on Ctrl+V and refactor paste re-enable
+* fix(notification): use ToolTip flag and track mouse press to prevent spurious click signals
+* fix(window-sync): sync window active state to JS via timer and changeEvent
+* fix(notifications): remove redundant closed signal connection
+* fix(quit): prevent double quit and ensure clean exit
+* fix(tray): persist unread count badge when window is minimized
+
+#### 🚀 Performance
+* perf(webengine): debounce audio capture notifications and fix buffer copy order
+* perf(webengine): optimize focus keeper and audio transcriber JS
+* perf(settings): async cache size calculation and iterative dir_size
+
+#### 🧹 Refactor
+* refactor(main): set app metadata before SingleApplication and add options
+* refactor(theme): support system theme and extract window-state helpers
+* refactor(transcriber): use move semantics for audio data
+* refactor(download): replace download manager widget with auto-download
+
+#### 📚 Docs
+* docs: update changelog and bump build number to 101
+* docs: update changelog and bump build number to 100
+* docs: update changelog and bump build number to 98
+* docs: update changelog and bump build number to 96
+* docs: document audio transcription feature and focus fix in README
+* docs: update changelog
+* docs: update changelog for build 63
+* docs: update changelog for build 62
+* docs: update changelog for builds 45-61
+* docs: update changelog for builds 43-44
+
+#### 🚧 Chores
+* chore: remove trailing blank line from changelog
+* chore(build): add build dir to gitignore, add whisper/ffmpeg/webchannel deps to project file
+* chore: bump build number to 63
+* chore: bump build number to 62
+* chore: bump build number to 61
+* chore: bump build number to 44
+
+
+## 4.16.3 (build 102) - 2026-03-09
+
+#### 🎁 Feature
+* feat(paste): inject image paste from system clipboard into WhatsApp Web
+* feat(transcription-ui): inject audio transcriber button into WhatsApp Web and add settings UI
+* feat(transcription): add AudioTranscriber and TranscriberBridge for local Whisper GPU inference
+* feat(focus): add Ctrl double-tap toggle and switch modifier to Alt
+
+#### 🐞 Bug Fixes
+* fix(webengine): use QPointer and deleteLater for safe page cleanup
+* fix(paste): prevent duplicate native paste when C++ bridge injects image
+* fix(focus): pause focus keeper on Ctrl+V and refactor paste re-enable
+* fix(notification): use ToolTip flag and track mouse press to prevent spurious click signals
+* fix(window-sync): sync window active state to JS via timer and changeEvent
+* fix(notifications): remove redundant closed signal connection
+* fix(quit): prevent double quit and ensure clean exit
+* fix(tray): persist unread count badge when window is minimized
+
+#### 🚀 Performance
+* perf(webengine): debounce audio capture notifications and fix buffer copy order
+* perf(webengine): optimize focus keeper and audio transcriber JS
+* perf(settings): async cache size calculation and iterative dir_size
+
+#### 🧹 Refactor
+* refactor(main): set app metadata before SingleApplication and add options
+* refactor(theme): support system theme and extract window-state helpers
+* refactor(transcriber): use move semantics for audio data
+* refactor(download): replace download manager widget with auto-download
+
+#### 📚 Docs
+* docs: update changelog and bump build number to 101
+* docs: update changelog and bump build number to 100
+* docs: update changelog and bump build number to 98
+* docs: update changelog and bump build number to 96
+* docs: document audio transcription feature and focus fix in README
+* docs: update changelog
+* docs: update changelog for build 63
+* docs: update changelog for build 62
+* docs: update changelog for builds 45-61
+* docs: update changelog for builds 43-44
+
+#### 🚧 Chores
+* chore: remove trailing blank line from changelog
+* chore(build): add build dir to gitignore, add whisper/ffmpeg/webchannel deps to project file
+* chore: bump build number to 63
+* chore: bump build number to 62
+* chore: bump build number to 61
+* chore: bump build number to 44
+
+
 ## 4.16.3 (build 101) - 2026-02-28
 
 #### 🎁 Feature
