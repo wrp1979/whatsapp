@@ -576,6 +576,7 @@ void WebEnginePage::injectInputFocusKeeper() {
       let toastTimer = null;
       let lastToast = null;
       let hintTimer = null;
+      let lastTypingTime = 0;
       const HINT_KEY = 'whatsieFocusHintSeen_v1';
 
       // Hidden input for WebKit focus workaround
@@ -676,18 +677,18 @@ void WebEnginePage::injectInputFocusKeeper() {
         return false;
       }
 
-      // WebKit workaround: focus hidden input first, then target
-      function webkitFocusFix(target) {
-        try {
-          hiddenInput.focus();
-          hiddenInput.setSelectionRange(0, 0);
-        } catch(e) {}
-        target.focus({ preventScroll: true, focusVisible: true });
+      // Focus target directly (Qt WebEngine = Chromium, no WebKit trick needed)
+      function focusTarget(target) {
+        target.focus({ preventScroll: true });
       }
 
       function pauseFocusFor(ms) {
         const until = Date.now() + ms;
         if (until > wheelPauseUntil) wheelPauseUntil = until;
+      }
+
+      function isTypingRecently() {
+        return (Date.now() - lastTypingTime) < 400;
       }
 
       function showFocusToast(message, type) {
@@ -848,7 +849,7 @@ void WebEnginePage::injectInputFocusKeeper() {
         if (input.contains(active)) return;
 
         // Use WebKit workaround
-        webkitFocusFix(input);
+        focusTarget(input);
         if (pausedByModifier) {
           pausedByModifier = false;
           showFocusToast('Focus restored', 'resume');
@@ -859,23 +860,23 @@ void WebEnginePage::injectInputFocusKeeper() {
       // the interactive cases immediately.
       let intervalId = setInterval(brutalFocus, 500);
 
-      // Detect modal close and IMMEDIATELY focus with burst
+      // Detect modal close and focus (debounced via rAF to avoid jank during typing)
+      let observerPending = false;
       const observer = new MutationObserver(() => {
-        const currentModalState = hasBlockingModal();
-        if (lastModalState && !currentModalState) {
-          // Modal just closed - FORCE FOCUS NOW with burst
-          brutalFocus();
-          setTimeout(brutalFocus, 0);
-          setTimeout(brutalFocus, 16);
-          setTimeout(brutalFocus, 32);
-          setTimeout(brutalFocus, 50);
-          setTimeout(brutalFocus, 100);
-          setTimeout(brutalFocus, 150);
-          setTimeout(brutalFocus, 200);
-          setTimeout(brutalFocus, 300);
-        }
-        lastModalState = currentModalState;
-
+        if (observerPending) return;
+        observerPending = true;
+        requestAnimationFrame(() => {
+          observerPending = false;
+          if (isTypingRecently()) return;
+          const currentModalState = hasBlockingModal();
+          if (lastModalState && !currentModalState) {
+            brutalFocus();
+            setTimeout(brutalFocus, 50);
+            setTimeout(brutalFocus, 150);
+            setTimeout(brutalFocus, 300);
+          }
+          lastModalState = currentModalState;
+        });
       });
 
       observer.observe(document.body, {
@@ -972,7 +973,6 @@ void WebEnginePage::injectInputFocusKeeper() {
         if (input && (e.target === input || input.contains(e.target))) {
           if (!hasBlockingModal() && !isOnOtherInput()) {
             setTimeout(brutalFocus, 0);
-            setTimeout(brutalFocus, 10);
             setTimeout(brutalFocus, 50);
             setTimeout(brutalFocus, 100);
           }
@@ -981,6 +981,12 @@ void WebEnginePage::injectInputFocusKeeper() {
 
       // Keyboard shortcut to force focus (Escape key when not in modal)
       document.addEventListener('keydown', (e) => {
+        // Track active typing to prevent focus interference during keystrokes
+        if (!e.ctrlKey && !e.altKey && !e.metaKey &&
+            (e.key.length === 1 || e.key === 'Backspace' ||
+             e.key === 'Delete' || e.key === 'Enter')) {
+          lastTypingTime = Date.now();
+        }
         // Pause focus keeper on Ctrl+V / Cmd+V so paste events reach
         // the correct element without webkitFocusFix interference.
         if (!e.repeat && (e.ctrlKey || e.metaKey) && !e.altKey &&
