@@ -1325,13 +1325,11 @@ void WebEnginePage::injectAudioTranscriber() {
       // -----------------------------------------------------------------
       function findMsgContainer(el) {
         var cur = el;
-        // Pass 1: data-id attribute or role=row (WhatsApp message markers)
         for (var i = 0; i < 30 && cur && cur !== document.body; i++) {
           if (cur.dataset && cur.dataset.id) return cur;
           if (cur.getAttribute && cur.getAttribute('role') === 'row') return cur;
           cur = cur.parentElement;
         }
-        // Pass 2: tabindex=-1 div inside #main
         cur = el;
         for (var j = 0; j < 30 && cur && cur !== document.body; j++) {
           if (cur.getAttribute && cur.getAttribute('tabindex') === '-1' &&
@@ -1339,8 +1337,6 @@ void WebEnginePage::injectAudioTranscriber() {
             return cur;
           cur = cur.parentElement;
         }
-        // Pass 3: last resort — take the ancestor at depth 8-12 that is a
-        // DIV inside #main.  Not perfect but always finds *something*.
         cur = el;
         for (var k = 0; k < 15 && cur && cur !== document.body; k++) {
           cur = cur.parentElement;
@@ -1353,61 +1349,21 @@ void WebEnginePage::injectAudioTranscriber() {
       }
 
       // -----------------------------------------------------------------
-      // Add a 📝 transcribe button to a message container
+      // Check if a message container has audio content
       // -----------------------------------------------------------------
-      var processedContainers = new WeakSet();
-      function addButtonToContainer(container, msgId) {
-        container.dataset.whatsieId = msgId;
-        var existingBtn = container.querySelector('.whatsie-transcribe-btn');
-        if (existingBtn) {
-          existingBtn.textContent = '\uD83D\uDCDD';
-          existingBtn.disabled = false;
-          existingBtn.onclick = function(e) {
-            e.stopPropagation(); e.preventDefault();
-            transcribeById(msgId, existingBtn);
-          };
-          return;
-        }
-        if (processedContainers.has(container)) return;
-        processedContainers.add(container);
-
-        var btn = document.createElement('button');
-        btn.className = 'whatsie-transcribe-btn';
-        btn.title = 'Transcrever \u00e1udio (Whisper)';
-        btn.textContent = '\uD83D\uDCDD';
-        btn.setAttribute('type', 'button');
-        btn.style.cssText = [
-          'all:initial',
-          'display:inline-flex',
-          'align-items:center',
-          'justify-content:center',
-          'width:28px',
-          'height:28px',
-          'border:none',
-          'border-radius:50%',
-          'background:rgba(0,130,0,0.18)',
-          'cursor:pointer',
-          'font-size:14px',
-          'margin-left:6px',
-          'vertical-align:middle',
-          'flex-shrink:0',
-          'transition:background 0.15s',
-          'font-family:sans-serif',
-          'z-index:9999',
-        ].join(';');
-        btn.onmouseenter = function() { btn.style.background='rgba(0,130,0,0.35)'; };
-        btn.onmouseleave = function() { btn.style.background='rgba(0,130,0,0.18)'; };
-        btn.onclick = function(e) {
-          e.stopPropagation(); e.preventDefault();
-          transcribeById(msgId, btn);
-        };
-        container.appendChild(btn);
+      function hasAudioContent(container) {
+        if (!container) return false;
+        return !!(
+          container.querySelector('[data-testid="audio-player"]') ||
+          container.querySelector('[data-testid="ptt-player"]') ||
+          container.querySelector('[data-testid*="audio"]') ||
+          container.querySelector('[data-testid*="ptt"]') ||
+          container.querySelector('audio')
+        );
       }
 
       // -----------------------------------------------------------------
       // Pull captured buffers from the early DocumentCreation interceptor
-      // (window._whatsieCaptured) and also keep our own decodeAudioData
-      // intercept as a secondary layer.
       // -----------------------------------------------------------------
       function scheduleCapturedFlush() {
         if (capturedFlushTimer) return;
@@ -1423,7 +1379,7 @@ void WebEnginePage::injectAudioTranscriber() {
           armAudioObserver(4000);
           LOG('Audio captured: ' +
               Math.round((latest.buf.byteLength || 0) / 1024) + ' KB');
-          tryAttachButtonForLastDecode(msgId);
+          associateMsgWithBuffer(msgId);
         }, 120);
       }
       window._whatsieOnCapturedAudio = scheduleCapturedFlush;
@@ -1431,9 +1387,8 @@ void WebEnginePage::injectAudioTranscriber() {
       setInterval(scheduleCapturedFlush, 2000);
 
       // -----------------------------------------------------------------
-      // After a decode call, look for the message container that was
-      // activated (WhatsApp usually adds a "playing" class or changes
-      // aria-label on the play button)
+      // Aria observer: track play button state changes to find which
+      // message is currently playing audio
       // -----------------------------------------------------------------
       var lastAriaChangedEl = null;
       var ariaObserver = new MutationObserver(function(muts) {
@@ -1457,8 +1412,11 @@ void WebEnginePage::injectAudioTranscriber() {
         }, durationMs || 3000);
       }
 
-      function tryAttachButtonForLastDecode(msgId) {
-        // --- pick best anchor element (proper cascade) ---
+      // -----------------------------------------------------------------
+      // Associate a message container with a captured audio buffer
+      // (sets data-whatsie-id on the container for later lookup)
+      // -----------------------------------------------------------------
+      function associateMsgWithBuffer(msgId) {
         var el = null;
         var lc = window._whatsieLastClick || {el: null, t: 0};
         if (lc.el && (Date.now() - lc.t) < 3000 &&
@@ -1471,81 +1429,17 @@ void WebEnginePage::injectAudioTranscriber() {
               el = lastAriaChangedEl;
           } catch(e){}
         }
-        LOG('tryAttach: el=' + (el ? el.tagName : 'none') +
-            ' click_age=' + (Date.now() - lc.t) + 'ms');
-        if (!el) { LOG('tryAttach: no anchor'); return; }
-
-        // Walk up from el to find the CONTROLS ROW — the first ancestor with
-        // 2+ children that is inside #main.  That is the row that has the
-        // play button, waveform and duration side-by-side.
-        var insertParent = null;
-        var cur = el;
-        for (var k = 0; k < 15 && cur && cur !== document.body; k++) {
-          var p = cur.parentElement;
-          if (!p || p === document.body) break;
-          try {
-            if (p.children.length >= 2 && p.closest && p.closest('#main')) {
-              insertParent = p;
-              break;
-            }
-          } catch(e) {}
-          cur = p;
-        }
-
-        // Container for data-whatsie-id tracking (higher level)
+        LOG('associateMsg: el=' + (el ? el.tagName : 'none'));
+        if (!el) return;
         var container = findMsgContainer(el);
-        LOG('tryAttach: insertParent=' +
-            (insertParent ? insertParent.tagName+'['+insertParent.children.length+'ch]' : 'null') +
-            ' container=' + (container ? container.tagName : 'null'));
-
-        if (!insertParent && !container) { LOG('tryAttach: nowhere to insert'); return; }
-
-        var tracker = container || insertParent;
-        tracker.dataset.whatsieId = msgId;
-        var existingBtn = tracker.querySelector('.whatsie-transcribe-btn');
-        if (existingBtn) {
-          existingBtn.textContent = '\uD83D\uDCDD';
-          existingBtn.disabled = false;
-          existingBtn.onclick = function(e) {
-            e.stopPropagation(); e.preventDefault();
-            transcribeById(msgId, existingBtn);
-          };
-          return;
-        }
-        if (processedContainers.has(tracker)) { LOG('tryAttach: already done'); return; }
-        processedContainers.add(tracker);
-
-        var btn = document.createElement('button');
-        btn.className = 'whatsie-transcribe-btn';
-        btn.title = 'Transcrever \u00e1udio (Whisper)';
-        btn.textContent = '\uD83D\uDCDD';
-        btn.setAttribute('type', 'button');
-        btn.style.cssText = [
-          'all:initial', 'display:inline-flex', 'align-items:center',
-          'justify-content:center', 'width:28px', 'height:28px',
-          'border:none', 'border-radius:50%', 'background:rgba(0,130,0,0.18)',
-          'cursor:pointer', 'font-size:14px', 'margin-left:6px',
-          'vertical-align:middle', 'flex-shrink:0', 'transition:background 0.15s',
-          'font-family:sans-serif', 'z-index:9999',
-        ].join(';');
-        btn.onmouseenter = function() { btn.style.background='rgba(0,130,0,0.35)'; };
-        btn.onmouseleave = function() { btn.style.background='rgba(0,130,0,0.18)'; };
-        btn.onclick = function(e) {
-          e.stopPropagation(); e.preventDefault();
-          transcribeById(msgId, btn);
-        };
-
-        // Insert inline in the controls row (play+waveform+duration row)
-        if (insertParent) {
-          insertParent.appendChild(btn);
-        } else {
-          container.appendChild(btn);
+        if (container) {
+          container.dataset.whatsieId = msgId;
+          LOG('Associated msg ' + msgId + ' with container');
         }
       }
 
       // -----------------------------------------------------------------
-      // Also watch for <audio> elements (fallback for older WA versions
-      // that do use HTML audio)
+      // Watch for <audio> elements (fallback for older WA versions)
       // -----------------------------------------------------------------
       var processedAudio = new WeakSet();
       function tryAttachFromAudio(audio) {
@@ -1562,11 +1456,10 @@ void WebEnginePage::injectAudioTranscriber() {
         processedAudio.add(audio);
 
         var msgId = 'wa_audio_' + Math.random().toString(36).slice(2);
-        // Lazily fetch the blob and save it
         fetch(src).then(function(r) { return r.arrayBuffer(); }).then(function(buf) {
           rememberSavedBuffer(msgId, buf, audio.type || 'audio/ogg');
           var container = findMsgContainer(audio);
-          if (container) addButtonToContainer(container, msgId);
+          if (container) container.dataset.whatsieId = msgId;
         }).catch(function() {});
       }
 
@@ -1596,22 +1489,13 @@ void WebEnginePage::injectAudioTranscriber() {
         }, durationMs || 4000);
       }
 
-      document.addEventListener('click', function(e) {
-        try {
-          if (e.target && e.target.closest && e.target.closest('#main')) {
-            armAriaObserver(3000);
-            armAudioObserver(4000);
-          }
-        } catch(err) {}
-      }, true);
-
       // -----------------------------------------------------------------
       // Transcribe by message id (uses saved buffer)
       // -----------------------------------------------------------------
-      function transcribeById(msgId, btn) {
+      function transcribeMsg(msgId) {
         var saved = savedBuffers[msgId] || (lastMsgId && savedBuffers[lastMsgId]);
         if (!saved) {
-          showTranscription(msgId, '\u26a0 Pressione play primeiro, depois clique \uD83D\uDCDD', true);
+          showTranscription(msgId, '\u26a0 Pressione play primeiro, depois use Transcribe', true);
           return;
         }
         if (!bridge) {
@@ -1620,7 +1504,7 @@ void WebEnginePage::injectAudioTranscriber() {
         }
         if (saved.pending) return;
         saved.pending = true;
-        btn.textContent = '\u23F3'; btn.disabled = true;
+        showTranscription(msgId, '\u23f3 Transcrevendo...', false);
         var u8 = new Uint8Array(saved.buf);
         var bin = '';
         for (var i = 0; i < u8.length; i += 8192)
@@ -1629,8 +1513,6 @@ void WebEnginePage::injectAudioTranscriber() {
           bridge.requestTranscription(btoa(bin), msgId, saved.mime);
         } catch (err) {
           saved.pending = false;
-          btn.textContent = '\uD83D\uDCDD';
-          btn.disabled = false;
           showTranscription(msgId, '\u26a0 Falha ao iniciar transcri\u00e7\u00e3o', true);
         }
       }
@@ -1640,14 +1522,11 @@ void WebEnginePage::injectAudioTranscriber() {
       // -----------------------------------------------------------------
       function showTranscription(msgId, text, isError) {
         var container = document.querySelector('[data-whatsie-id="' + msgId + '"]');
-        // Fallback: if we don't have the exact container, find last one
         if (!container) {
           var all = document.querySelectorAll('[data-whatsie-id]');
           container = all[all.length - 1] || null;
         }
         if (!container) { LOG('showTranscription: no container for ' + msgId); return; }
-        var btn = container.querySelector('.whatsie-transcribe-btn');
-        if (btn) { btn.textContent = '\uD83D\uDCDD'; btn.disabled = false; }
         var div = container.querySelector('.whatsie-transcription');
         if (!div) {
           div = document.createElement('div');
@@ -1664,11 +1543,164 @@ void WebEnginePage::injectAudioTranscriber() {
         div.textContent = text;
       }
 
+      // =================================================================
+      // CONTEXT MENU INTEGRATION
+      // Instead of injecting a button into the audio message DOM (which
+      // WhatsApp's React re-renders constantly remove), we inject a
+      // "Transcribe" item into WhatsApp's own context menu when it
+      // appears on an audio message.
+      // =================================================================
+      var menuCheckTimer = null;
+      var lastMenuAudioContainer = null;
+
+      // Find WhatsApp's open context menu in the DOM.
+      // WhatsApp renders context menus as popup elements outside #main,
+      // containing <li> items with [data-icon] SVG icons.
+      function findContextMenu() {
+        // Strategy 1: UL-based menus outside #main with data-icon items
+        var uls = document.querySelectorAll('ul');
+        for (var i = 0; i < uls.length; i++) {
+          var ul = uls[i];
+          if (ul.children.length < 3) continue;
+          if (ul.closest && ul.closest('#main')) continue;
+          if (ul.querySelector('.whatsie-transcribe-menu-item')) continue;
+          if (ul.querySelector('[data-icon]')) return ul;
+        }
+        // Strategy 2: role-based menus (div containers)
+        var menus = document.querySelectorAll('[role="menu"], [role="listbox"]');
+        for (var j = 0; j < menus.length; j++) {
+          var menu = menus[j];
+          if (menu.children.length < 3) continue;
+          if (menu.closest && menu.closest('#main')) continue;
+          if (menu.querySelector('.whatsie-transcribe-menu-item')) continue;
+          if (menu.querySelector('[data-icon]')) return menu;
+        }
+        return null;
+      }
+
+      // Poll for context menu appearance after a click on an audio msg
+      function checkForContextMenu(attempt) {
+        if (attempt > 15 || !lastMenuAudioContainer) return;
+        var delay = attempt < 3 ? 50 : 150;
+        menuCheckTimer = setTimeout(function() {
+          var menu = findContextMenu();
+          if (menu) {
+            injectTranscribeMenuItem(menu);
+          } else {
+            checkForContextMenu(attempt + 1);
+          }
+        }, delay);
+      }
+
+      // Clone an existing menu item, restyle it as "Transcribe", and
+      // append it to the context menu.
+      function injectTranscribeMenuItem(menuContainer) {
+        if (!lastMenuAudioContainer) return;
+        if (menuContainer.querySelector('.whatsie-transcribe-menu-item')) return;
+
+        var items = menuContainer.querySelectorAll('li');
+        if (items.length === 0) return;
+
+        // Clone first item for consistent styling
+        var template = items[0];
+        var newItem = template.cloneNode(true);
+        newItem.classList.add('whatsie-transcribe-menu-item');
+
+        // Strip data attributes to avoid WhatsApp React interference
+        newItem.querySelectorAll('[data-testid]').forEach(function(el) {
+          el.removeAttribute('data-testid');
+        });
+        newItem.querySelectorAll('[data-icon]').forEach(function(el) {
+          el.removeAttribute('data-icon');
+        });
+
+        // Replace text: find the deepest text-only element
+        var textFound = false;
+        var allEls = newItem.querySelectorAll('div, span');
+        for (var i = allEls.length - 1; i >= 0; i--) {
+          var el = allEls[i];
+          if (el.children.length === 0 && el.textContent.trim().length > 0) {
+            el.textContent = 'Transcribe';
+            textFound = true;
+            break;
+          }
+        }
+        if (!textFound) return;
+
+        // Replace icon: swap SVG for emoji
+        var svg = newItem.querySelector('svg');
+        if (svg) {
+          var iconParent = svg.parentElement;
+          svg.remove();
+          var iconSpan = document.createElement('span');
+          iconSpan.textContent = '\uD83D\uDCDD';
+          iconSpan.style.cssText = 'font-size:18px;line-height:1;';
+          iconParent.appendChild(iconSpan);
+        }
+
+        // Remove any stale inline handlers from the cloned node
+        newItem.removeAttribute('onclick');
+        newItem.removeAttribute('onmousedown');
+        newItem.removeAttribute('onmouseup');
+
+        // Wire up the transcription click handler
+        var audioContainer = lastMenuAudioContainer;
+        newItem.addEventListener('click', function(e) {
+          e.stopPropagation();
+          e.preventDefault();
+
+          // Close the context menu via Escape
+          document.dispatchEvent(new KeyboardEvent('keydown', {
+            key: 'Escape', code: 'Escape', keyCode: 27,
+            bubbles: true, cancelable: true
+          }));
+
+          // Get or assign a message ID
+          var msgId = audioContainer.dataset.whatsieId;
+          if (!msgId) {
+            msgId = 'wa_menu_' + Date.now();
+            audioContainer.dataset.whatsieId = msgId;
+          }
+          transcribeMsg(msgId);
+        }, true);
+
+        menuContainer.appendChild(newItem);
+        LOG('Transcribe menu item injected');
+      }
+
+      // -----------------------------------------------------------------
+      // Click listener: arm audio observers + context menu detector
+      // -----------------------------------------------------------------
+      document.addEventListener('click', function(e) {
+        try {
+          if (e.target && e.target.closest && e.target.closest('#main')) {
+            armAriaObserver(3000);
+            armAudioObserver(4000);
+          }
+          // Track audio message for context menu injection
+          var msg = findMsgContainer(e.target);
+          if (msg && hasAudioContent(msg)) {
+            lastMenuAudioContainer = msg;
+            if (menuCheckTimer) clearTimeout(menuCheckTimer);
+            checkForContextMenu(0);
+          } else {
+            lastMenuAudioContainer = null;
+            if (menuCheckTimer) clearTimeout(menuCheckTimer);
+          }
+        } catch(err) {}
+      }, true);
+
       initChannel();
-      LOG('Audio transcriber v3 active - intercepting decodeAudioData');
+      LOG('Audio transcriber v4 active - context menu integration');
 
       window._whatsieTranscriber = {
-        status: function() { return {bridge: !!bridge, v: 3, buffers: Object.keys(savedBuffers).length, last: lastMsgId}; }
+        status: function() {
+          return {
+            bridge: !!bridge, v: 4,
+            buffers: Object.keys(savedBuffers).length,
+            last: lastMsgId
+          };
+        }
       };
     })();
   )";
