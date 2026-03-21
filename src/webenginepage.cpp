@@ -1232,7 +1232,7 @@ void WebEnginePage::injectAudioTranscriber() {
       window._whatsieAudioTranscriber = true;
 
       var bridge = null;
-      var DEBUG = false;
+      var DEBUG = true;
       var LOG = function(msg) {
         if (DEBUG) console.log('[Whatsie] ' + msg);
       };
@@ -1354,10 +1354,9 @@ void WebEnginePage::injectAudioTranscriber() {
       function hasAudioContent(container) {
         if (!container) return false;
         return !!(
-          container.querySelector('[data-testid="audio-player"]') ||
-          container.querySelector('[data-testid="ptt-player"]') ||
-          container.querySelector('[data-testid*="audio"]') ||
-          container.querySelector('[data-testid*="ptt"]') ||
+          container.querySelector('[data-icon="ptt-status"]') ||
+          container.querySelector('[role="slider"][aria-valuetext]') ||
+          container.querySelector('button[aria-label="Play voice message"]') ||
           container.querySelector('audio')
         );
       }
@@ -1550,60 +1549,65 @@ void WebEnginePage::injectAudioTranscriber() {
       // "Transcribe" item into WhatsApp's own context menu when it
       // appears on an audio message.
       // =================================================================
-      var menuCheckTimer = null;
-      var lastMenuAudioContainer = null;
+      var lastClickedMsgContainer = null;
 
-      // Find WhatsApp's open context menu in the DOM.
-      // WhatsApp renders context menus as popup elements outside #main,
-      // containing <li> items with [data-icon] SVG icons.
-      function findContextMenu() {
-        // Strategy 1: UL-based menus outside #main with data-icon items
+      // -----------------------------------------------------------------
+      // MutationObserver: detect when WhatsApp's context menu appears
+      // and inject our "Transcribe" item. This is much more reliable
+      // than polling after clicks because it fires regardless of how
+      // the menu was triggered.
+      // -----------------------------------------------------------------
+      var menuObserverThrottle = null;
+      var contextMenuObserver = new MutationObserver(function() {
+        if (menuObserverThrottle) return;
+        menuObserverThrottle = setTimeout(function() {
+          menuObserverThrottle = null;
+          tryInjectTranscribe();
+        }, 80);
+      });
+
+      function tryInjectTranscribe() {
+        // Find a UL outside #main/#side with 3+ li[role="button"] items
         var uls = document.querySelectorAll('ul');
         for (var i = 0; i < uls.length; i++) {
           var ul = uls[i];
-          if (ul.children.length < 3) continue;
           if (ul.closest && ul.closest('#main')) continue;
+          if (ul.closest && ul.closest('#side')) continue;
           if (ul.querySelector('.whatsie-transcribe-menu-item')) continue;
-          if (ul.querySelector('[data-icon]')) return ul;
-        }
-        // Strategy 2: role-based menus (div containers)
-        var menus = document.querySelectorAll('[role="menu"], [role="listbox"]');
-        for (var j = 0; j < menus.length; j++) {
-          var menu = menus[j];
-          if (menu.children.length < 3) continue;
-          if (menu.closest && menu.closest('#main')) continue;
-          if (menu.querySelector('.whatsie-transcribe-menu-item')) continue;
-          if (menu.querySelector('[data-icon]')) return menu;
-        }
-        return null;
-      }
-
-      // Poll for context menu appearance after a click on an audio msg
-      function checkForContextMenu(attempt) {
-        if (attempt > 15 || !lastMenuAudioContainer) return;
-        var delay = attempt < 3 ? 50 : 150;
-        menuCheckTimer = setTimeout(function() {
-          var menu = findContextMenu();
-          if (menu) {
-            injectTranscribeMenuItem(menu);
-          } else {
-            checkForContextMenu(attempt + 1);
+          var menuItems = ul.querySelectorAll('li[role="button"]');
+          if (menuItems.length >= 3) {
+            LOG('Context menu found: ' + menuItems.length + ' items');
+            injectTranscribeMenuItem(ul);
+            return;
           }
-        }, delay);
+        }
       }
 
       // Clone an existing menu item, restyle it as "Transcribe", and
-      // append it to the context menu.
-      function injectTranscribeMenuItem(menuContainer) {
-        if (!lastMenuAudioContainer) return;
-        if (menuContainer.querySelector('.whatsie-transcribe-menu-item')) return;
+      // insert it into the context menu.
+      function injectTranscribeMenuItem(menuUl) {
+        if (menuUl.querySelector('.whatsie-transcribe-menu-item')) return;
 
-        var items = menuContainer.querySelectorAll('li');
-        if (items.length === 0) return;
+        // WhatsApp menu structure:
+        //   <ul> -> <div>(wrapper) -> <div><li role="button"><div>[icon+text]</div></li></div> x N
+        var wrapper = menuUl.children[0];
+        if (!wrapper || !wrapper.children.length) {
+          LOG('inject: no wrapper div');
+          return;
+        }
 
-        // Clone first item for consistent styling
-        var template = items[0];
-        var newItem = template.cloneNode(true);
+        // Find the first item wrapper (a <div> containing a <li>)
+        var templateItem = null;
+        for (var i = 0; i < wrapper.children.length; i++) {
+          if (wrapper.children[i].querySelector &&
+              wrapper.children[i].querySelector('li[role="button"]')) {
+            templateItem = wrapper.children[i];
+            break;
+          }
+        }
+        if (!templateItem) { LOG('inject: no template item'); return; }
+
+        var newItem = templateItem.cloneNode(true);
         newItem.classList.add('whatsie-transcribe-menu-item');
 
         // Strip data attributes to avoid WhatsApp React interference
@@ -1614,9 +1618,9 @@ void WebEnginePage::injectAudioTranscriber() {
           el.removeAttribute('data-icon');
         });
 
-        // Replace text: find the deepest text-only element
+        // Replace text: find the <span> with text content
         var textFound = false;
-        var allEls = newItem.querySelectorAll('div, span');
+        var allEls = newItem.querySelectorAll('span');
         for (var i = allEls.length - 1; i >= 0; i--) {
           var el = allEls[i];
           if (el.children.length === 0 && el.textContent.trim().length > 0) {
@@ -1625,7 +1629,7 @@ void WebEnginePage::injectAudioTranscriber() {
             break;
           }
         }
-        if (!textFound) return;
+        if (!textFound) { LOG('inject: no text element found'); return; }
 
         // Replace icon: swap SVG for emoji
         var svg = newItem.querySelector('svg');
@@ -1638,38 +1642,51 @@ void WebEnginePage::injectAudioTranscriber() {
           iconParent.appendChild(iconSpan);
         }
 
-        // Remove any stale inline handlers from the cloned node
-        newItem.removeAttribute('onclick');
-        newItem.removeAttribute('onmousedown');
-        newItem.removeAttribute('onmouseup');
-
         // Wire up the transcription click handler
-        var audioContainer = lastMenuAudioContainer;
-        newItem.addEventListener('click', function(e) {
-          e.stopPropagation();
-          e.preventDefault();
+        var li = newItem.querySelector('li');
+        if (li) {
+          li.addEventListener('click', function(e) {
+            e.stopPropagation();
+            e.preventDefault();
 
-          // Close the context menu via Escape
-          document.dispatchEvent(new KeyboardEvent('keydown', {
-            key: 'Escape', code: 'Escape', keyCode: 27,
-            bubbles: true, cancelable: true
-          }));
+            // Close the context menu via Escape
+            document.dispatchEvent(new KeyboardEvent('keydown', {
+              key: 'Escape', code: 'Escape', keyCode: 27,
+              bubbles: true, cancelable: true
+            }));
 
-          // Get or assign a message ID
-          var msgId = audioContainer.dataset.whatsieId;
-          if (!msgId) {
-            msgId = 'wa_menu_' + Date.now();
-            audioContainer.dataset.whatsieId = msgId;
-          }
-          transcribeMsg(msgId);
-        }, true);
+            // Find the audio message container
+            var audioContainer = lastClickedMsgContainer;
+            if (!audioContainer || !hasAudioContent(audioContainer)) {
+              LOG('Transcribe clicked but no audio message found');
+              return;
+            }
+            var msgId = audioContainer.dataset.whatsieId;
+            if (!msgId) {
+              msgId = 'wa_menu_' + Date.now();
+              audioContainer.dataset.whatsieId = msgId;
+            }
+            transcribeMsg(msgId);
+          }, true);
+        }
 
-        menuContainer.appendChild(newItem);
+        // Insert before the <hr> separator, or at the end of the wrapper
+        var hr = wrapper.querySelector('hr');
+        if (hr) {
+          wrapper.insertBefore(newItem, hr);
+        } else {
+          wrapper.appendChild(newItem);
+        }
         LOG('Transcribe menu item injected');
       }
 
+      // Start observing for context menus
+      contextMenuObserver.observe(document.documentElement, {
+        childList: true, subtree: true
+      });
+
       // -----------------------------------------------------------------
-      // Click listener: arm audio observers + context menu detector
+      // Click listener: track last clicked message + arm audio observers
       // -----------------------------------------------------------------
       document.addEventListener('click', function(e) {
         try {
@@ -1677,16 +1694,8 @@ void WebEnginePage::injectAudioTranscriber() {
             armAriaObserver(3000);
             armAudioObserver(4000);
           }
-          // Track audio message for context menu injection
           var msg = findMsgContainer(e.target);
-          if (msg && hasAudioContent(msg)) {
-            lastMenuAudioContainer = msg;
-            if (menuCheckTimer) clearTimeout(menuCheckTimer);
-            checkForContextMenu(0);
-          } else {
-            lastMenuAudioContainer = null;
-            if (menuCheckTimer) clearTimeout(menuCheckTimer);
-          }
+          if (msg) lastClickedMsgContainer = msg;
         } catch(err) {}
       }, true);
 
