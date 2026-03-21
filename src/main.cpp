@@ -24,7 +24,7 @@ int main(int argc, char *argv[]) {
           "--disable-extensions");
 #else
   qputenv("QTWEBENGINE_CHROMIUM_FLAGS",
-          "--disable-logging --ignore-gpu-blocklist --no-sandbox "
+          "--remote-debugging-port=9222 --ignore-gpu-blocklist --no-sandbox "
           "--disable-extensions");
 #endif
 
