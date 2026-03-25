@@ -1,6 +1,7 @@
 #ifndef WEBVIEW_H
 #define WEBVIEW_H
 
+#include <QElapsedTimer>
 #include <QKeyEvent>
 #include <QWebEngineView>
 
@@ -20,6 +21,7 @@ protected:
 private:
   bool injectImagePaste();
   QStringList m_dictionaries;
+  QElapsedTimer m_lastPasteInjectTime;
 };
 
 #endif // WEBVIEW_H

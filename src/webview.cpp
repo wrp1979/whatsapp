@@ -139,12 +139,19 @@ bool WebView::eventFilter(QObject *watched, QEvent *event) {
   if (event->type() == QEvent::KeyPress) {
     auto *ke = static_cast<QKeyEvent *>(event);
     if (ke->matches(QKeySequence::Paste)) {
-      // Check if focus is within our WebView (not which object receives
-      // the event).  The key event is delivered first to QWidgetWindow
-      // then to QQuickWidget; we must consume at the first delivery to
-      // prevent Chromium from also processing the native paste.
+      // Ignore auto-repeat (user holding Ctrl+V) — one injection is enough
+      if (ke->isAutoRepeat())
+        return true;
+      // Debounce: skip if we already injected a paste recently.
+      // The app-level filter may fire for multiple watched objects on the
+      // same physical key press, and Chromium's renderer may also produce
+      // delayed paste events.  2 s covers all of these.
+      if (m_lastPasteInjectTime.isValid() &&
+          m_lastPasteInjectTime.elapsed() < 2000)
+        return true;
       QWidget *fw = QApplication::focusWidget();
       if (fw && (fw == this || isAncestorOf(fw)) && injectImagePaste()) {
+        m_lastPasteInjectTime.start();
         return true; // consumed — image injected via JS
       }
     }
@@ -189,6 +196,8 @@ bool WebView::injectImagePaste() {
   // Inject synthetic ClipboardEvent with the image as a File blob.
   // WhatsApp Web's paste handler picks up the File from clipboardData
   // and opens the image preview / send modal.
+  // ev._whatsieInjected marks our synthetic event so the JS paste handler
+  // (in focus keeper) can distinguish it from native Chromium pastes.
   QString js = QString(R"JS(
     (function() {
       try {
@@ -204,7 +213,6 @@ bool WebView::injectImagePaste() {
           bubbles: true, cancelable: true, clipboardData: dt
         });
         ev._whatsieInjected = true;
-        window._whatsieInjectingPaste = true;
         var el = document.querySelector(
                    '[contenteditable="true"][data-tab="10"]') ||
                  document.querySelector(
@@ -214,7 +222,6 @@ bool WebView::injectImagePaste() {
           el.focus();
           el.dispatchEvent(ev);
         }
-        setTimeout(function() { window._whatsieInjectingPaste = false; }, 1500);
       } catch(e) {
         console.error('[Whatsie] Image paste injection failed:', e);
       }
