@@ -745,9 +745,6 @@ void MainWindow::createTrayIcon() {
   m_trayIconMenu->addAction(m_quitAction);
 
   m_systemTrayIcon = new QSystemTrayIcon(m_trayIconNormal, this);
-  m_systemTrayIcon->setContextMenu(m_trayIconMenu);
-  connect(m_trayIconMenu, &QMenu::aboutToShow, this,
-          &MainWindow::checkWindowState);
   connect(m_systemTrayIcon, &QSystemTrayIcon::messageClicked, this,
           [this]() { notificationClicked(); });
 
@@ -1299,31 +1296,22 @@ void MainWindow::handleDownloadRequested(QWebEngineDownloadRequest *download) {
 }
 
 void MainWindow::iconActivated(QSystemTrayIcon::ActivationReason reason) {
-  if (reason == QSystemTrayIcon::Context) {
-    return;
-  }
+  const bool vis = isVisible();
+  const bool minz = isMinimized();
+  fprintf(stderr, "[TRAY] reason=%d visible=%d minimized=%d -> %s\n",
+          (int)reason, vis, minz, (vis && !minz) ? "HIDE" : "SHOW");
+  fflush(stderr);
 
-  if (reason != QSystemTrayIcon::Trigger &&
-      reason != QSystemTrayIcon::DoubleClick &&
-      reason != QSystemTrayIcon::MiddleClick &&
-      reason != QSystemTrayIcon::Unknown) {
-    return;
-  }
-
-  const bool toggleOnClick = SettingsManager::instance()
-                                 .settings()
-                                 .value("minimizeOnTrayIconClick", false)
-                                 .toBool();
-  if (toggleOnClick) {
-    if (isVisible()) {
-      hide();
-    } else {
-      notificationClicked();
+  if (vis && !minz) {
+    hide();
+  } else {
+    if (minz) {
+      setWindowState(windowState() & ~Qt::WindowMinimized);
     }
-    return;
+    show();
+    raise();
+    activateWindow();
   }
-
-  notificationClicked();
 }
 
 void MainWindow::doAppReload() {
